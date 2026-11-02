@@ -15,7 +15,7 @@
    - queues changes and sends them to your Google Sheet when online */
 (function () {
   const H = {
-    Categories: ['ID','Type','Name','Budget','Order','DueDay'],
+    Categories: ['ID','Type','Name','Budget','Order'],
     Accounts: ['ID','Name','Parent','Type','Opening','Currency','Target','Order'],
     Transactions: ['ID','Date','Type','Category','Account','ToAccount','Amount','Note','Rate','ToAmount','Photo'],
     Goals: ['ID','Name','Target','Saved','TargetDate','Account'],
@@ -23,12 +23,12 @@
     Rates: ['ID','Date','Buy','Sell'],
     Loans: ['ID','Person','Direction','Amount','Date','DueDate','Account','Note'],
     LoanPayments: ['ID','LoanID','Date','Amount','Account','Note'],
-    AccBudgets: ['ID','Category','Account','Amount'],
+    AccBudgets: ['ID','Category','Account','Amount','DueDay'],
     Assets: ['ID','Kind','Name','Code'],
     InvTx: ['ID','AssetID','Date','Type','Units','Price','Fees','Amount','Account','Note'],
     Prices: ['ID','AssetID','Date','Price']
   };
-  const VER = 'v7';
+  const VER = 'v8';
   const LS = window.localStorage;
   const cfg = () => ({ url: LS.getItem('mm_url') || '', key: LS.getItem('mm_key') || '' });
   const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -133,11 +133,12 @@
       if (name === 'Assets') { dropWhere('InvTx', 'AssetID', id); dropWhere('Prices', 'AssetID', id); }
     },
     reorder(name, ids) { ids.forEach((id, k) => { const r = T()[name].find(x => x.ID === id); if (r) r.Order = k + 1; }); },
-    saveAccBudget(categoryId, account, amount) {
+    saveAccBudget(categoryId, account, amount, dueDay) {
       const cat = T().Categories.find(c => c.ID === categoryId); if (!cat) throw new Error('Category not found');
       T().AccBudgets = T().AccBudgets.filter(r => !(r.Category === cat.Name && r.Account === account));
       const amt = Number(amount) || 0;
-      if (amt > 0) T().AccBudgets.push({ ID: newId(), Category: cat.Name, Account: account, Amount: amt });
+      let dd = Math.round(Number(dueDay)) || 0; if (dd < 1 || dd > 31) dd = 0;
+      if (amt > 0 || dd > 0) T().AccBudgets.push({ ID: newId(), Category: cat.Name, Account: account, Amount: amt, DueDay: dd || '' });
       const total = T().AccBudgets.filter(r => r.Category === cat.Name).reduce((s, r) => s + (Number(r.Amount) || 0), 0);
       if (total > 0) cat.Budget = total;
     },
@@ -527,14 +528,21 @@ const roots = () => D.Accounts.filter(a => !a.Parent || !D.Accounts.some(p => p.
 
 /* ---------- navigation ---------- */
 const TABS = [['home','🏠','Home'],['ov','✨','Overview'],['tx','🧾','Transactions'],['ana','📊','Analysis'],['budget','🎯','Budget'],['acc','🏦','Accounts'],['more','☰','More']];
-const tabList = () => {
+const allTabs = () => {                                    // every tab, in the saved order
   const known = TABS.map(t => t[0]);
   const saved = Array.from(new Set(String(getSet('TabOrder') || '').split(',').filter(k => known.indexOf(k) >= 0)));
   known.forEach(k => { if (saved.indexOf(k) < 0) saved.push(k); });
   return saved.map(k => TABS.find(t => t[0] === k));
 };
+const hiddenSet = () => new Set(String(getSet('HiddenTabs') || '').split(',').filter(k => k && k !== 'more'));
+const tabList = () => allTabs().filter(t => !hiddenSet().has(t[0]));      // tabs shown in the bottom bar
+function toggleTab(k) {
+  if (k === 'more') return;
+  const h = hiddenSet(); if (h.has(k)) h.delete(k); else h.add(k);
+  setSet('HiddenTabs', Array.from(h).join(',')); render();
+}
 function render() {
-  $('#nav').innerHTML = tabList().map(t => `<button class="${tab===t[0]?'on':''}" onclick="go('${t[0]}')"><span>${t[1]}</span>${t[2]}</button>`).join('');
+  $('#nav').innerHTML = tabList().map(t => `<button class="${tab===t[0] || (t[0]==='more' && hiddenSet().has(tab)) ? 'on':''}" onclick="go('${t[0]}')"><span>${t[1]}</span>${t[2]}</button>`).join('');
   $('#fab').style.display = (tab === 'home' || tab === 'tx') ? 'block' : 'none';
   $('#app').innerHTML = ({home, ov, tx, ana, budget, acc, more})[tab]();
 }
@@ -788,6 +796,22 @@ document.addEventListener('pointerup', endDrag);
 document.addEventListener('pointercancel', endDrag);
 document.addEventListener('contextmenu', e => { if (e.target.closest && e.target.closest('.grip')) e.preventDefault(); });
 function toggleBudDef() { setSet('BudgetAccount', getSet('BudgetAccount') === budAcct ? '' : budAcct); render(); }
+let budOpen = null, budShown = 8;
+function toggleBud(id) { budOpen = budOpen === id ? null : id; budShown = 8; render(); }
+function catHistory(c, acct, editCall) {                  // earlier transactions of one budget item, newest first
+  const names = acct ? groupNames(accByName(acct)) : null;
+  const l = D.Transactions.filter(t => (c.Type === 'Expense' ? isOut(t) : isInTag(t)) && t.Category === c.Name &&
+      (!names || names.has(c.Type !== 'Expense' && t.Type === 'Transfer' ? t.ToAccount : t.Account)))
+    .sort((a, b) => String(a.Date) < String(b.Date) ? 1 : -1);
+  const rows = l.slice(0, budShown).map(t => `<div class="row" style="padding:7px 0;font-size:14px" onclick="editTx('${t.ID}')"><div style="min-width:0"><span class="mute">${esc(t.Date)}</span>${acct ? '' : ' · ' + esc(t.Account)}${t.Note ? `<div class="mute" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.Note)}</div>` : ''}</div><b style="white-space:nowrap">${fmt(val(t))}</b></div>`).join('');
+  return `<div style="margin-top:8px;padding:8px 10px;background:var(--bg);border-radius:10px">
+    <div class="row" style="font-size:12px;color:var(--mute)"><span>${l.length ? 'Previous transactions · ' + l.length : 'No transactions yet'}</span><span class="lnk" style="margin:0" onclick="${editCall}">Edit budget</span></div>
+    ${rows}${l.length > budShown ? `<div class="more" onclick="budShown+=10;render()">Show more</div>` : ''}</div>`;
+}
+function budRow(c, acct, amount, tag, editCall) {
+  const open = budOpen === c.ID;
+  return `<div class="item"><div class="row" onclick="toggleBud('${c.ID}')" style="cursor:pointer"><span><span class="mute">${open ? '▾' : '▸'}</span> ${esc(c.Name)}${tag || ''}</span>${amount}</div>${open ? catHistory(c, acct, editCall) : ''}</div>`;
+}
 function budget() {
   const leaves = leafList();
   if (budAcct === null) { const d = getSet('BudgetAccount'); budAcct = d && leaves.some(x => x.Name === d) ? d : ''; }
@@ -802,20 +826,21 @@ function budget() {
     const amt = c => sum(D.AccBudgets.filter(x => x.Account === budAcct && x.Category === c.Name), x => x.Amount);
     const rows = l => l.map(c => { const v = amt(c);
       if (reorder) return dragCat(c);
-      return `<div class="item row" onclick="editAcctBudget('${c.ID}')"><span>${esc(c.Name)}</span><b class="${v ? '' : 'mute'}">${v ? fmt(v) : '–'}</b></div>`; }).join('')
+      const ab = D.AccBudgets.find(x => x.Account === budAcct && x.Category === c.Name), dd = ab ? dueDay(ab) : 0;
+      return budRow(c, budAcct, `<b class="${v ? '' : 'mute'}">${v ? fmt(v) : '–'}</b>`, dd ? ` <span class="mute">· due ${dd}${th(dd)}</span>` : '', `editAcctBudget('${c.ID}')`); }).join('')
       || '<div class="mute">None yet</div>';
     const be = sum(ex, amt), bi = sum(inc, amt);
     return `${sel}${reorder ? '<div class="mute" style="margin:0 0 10px">Drag ⠿ to change the order. It is used everywhere in the app.</div>' : head3(bi, be)}
     <h2>Expense categories</h2><div class="card tight">${rows(ex)}</div>
     <h2>Income categories</h2><div class="card tight">${rows(inc)}</div>
-    ${reorder ? '' : `<div class="mute">Monthly budget for ${esc(budAcct)}. The same amounts apply every month. Tap a category to change it.</div>`}
+    ${reorder ? '' : `<div class="mute">Monthly budget for ${esc(budAcct)}. The same amounts apply every month. Tap a category to see its transactions.</div>`}
     <div class="btns">${reorder ? '<button class="btn" onclick="reorder=false;render()">Done</button>'
       : '<button class="btn" onclick="editCat()">Add category</button><button class="btn ghost" onclick="reorder=true;render()">↕ Reorder categories</button>'}</div>`;
   }
   const be = sum(ex, c => c.Budget), bi = sum(inc, c => c.Budget);
   const rows = l => l.map((c, i) => reorder
     ? dragCat(c)
-    : `<div class="item row" onclick="editCat('${c.ID}')"><b>${esc(c.Name)}${D.AccBudgets.some(x => x.Category === c.Name) ? ' <span class="mute">· by account</span>' : ''}${dueDay(c) ? ' <span class="mute">· due ' + dueDay(c) + th(dueDay(c)) + '</span>' : ''}</b><span>${fmt(c.Budget)}</span></div>`).join('')
+    : budRow(c, '', `<span>${fmt(c.Budget)}</span>`, D.AccBudgets.some(x => x.Category === c.Name) ? ' <span class="mute">· by account</span>' : '', `editCat('${c.ID}')`)).join('')
     || '<div class="mute">None yet</div>';
   return `${sel}
   <div class="mute" style="margin:0 0 10px">${reorder ? 'Drag ⠿ to change the order. It is used everywhere in the app.' : 'Monthly budget in LKR. The same amounts apply every month. Pick an account above to budget per account.'}</div>
@@ -891,7 +916,7 @@ function acc() {
 
 
 /* ---------- overview ---------- */
-const dueDay = c => { const d = Math.round(+c.DueDay); return d >= 1 && d <= 31 ? d : 0; };
+const dueDay = c => { const d = Math.round(+c.DueDay); return d >= 1 && d <= 31 ? d : 0; };   // c = a row of AccBudgets
 const th = d => (d % 100 >= 11 && d % 100 <= 13) ? 'th' : ({1:'st',2:'nd',3:'rd'}[d % 10] || 'th');
 const midnight = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const parseD = str => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(str || '')); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };
@@ -905,15 +930,15 @@ const openAsset = id => { const a = D.Assets.find(x => x.ID === id); tab = 'more
 const openSub = k => { tab = 'more'; sub = k; reorder = false; render(); window.scrollTo(0, 0); };
 const ovHead = (t, right) => `<div class="ov-h"><b>${t}</b><span>${right || ''}</span></div>`;
 
-function billsDue() {                                      // budget categories that have a due day
+function billsDue() {                                      // account budgets that have a due day
   const n = new Date(), ym = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0');
-  return D.Categories.filter(c => c.Type === 'Expense' && dueDay(c)).map(c => {
-    const b = +c.Budget || 0;
-    const paid = sum(D.Transactions.filter(t => isOut(t) && t.Category === c.Name && String(t.Date).slice(0, 7) === ym), val);
+  return D.AccBudgets.filter(x => dueDay(x) && D.Categories.some(c => c.Type === 'Expense' && c.Name === x.Category)).map(x => {
+    const b = +x.Amount || 0;
+    const paid = sum(D.Transactions.filter(t => isOut(t) && t.Category === x.Category && t.Account === x.Account && String(t.Date).slice(0, 7) === ym), val);
     const done = b > 0 ? paid >= b - 0.5 : paid > 0;
-    const due = dueIn(n.getFullYear(), n.getMonth(), dueDay(c));
-    const next = dueIn(n.getFullYear(), n.getMonth() + 1, dueDay(c));
-    return {c, b, paid, done, due, next, days: daysTo(due), left: Math.max(b - paid, 0)};
+    const due = dueIn(n.getFullYear(), n.getMonth(), dueDay(x));
+    const next = dueIn(n.getFullYear(), n.getMonth() + 1, dueDay(x));
+    return {c: {Name: x.Category, DueDay: x.DueDay}, acct: x.Account, b, paid, done, due, next, days: daysTo(due), left: Math.max(b - paid, 0)};
   });
 }
 
@@ -921,13 +946,13 @@ function ov() {
   const bills = billsDue();
   const open = bills.filter(x => !x.done).sort((a, b) => a.days - b.days);
   const done = bills.filter(x => x.done).sort((a, b) => a.next - b.next);
-  const billRow = x => `<div class="ov-r" onclick="editTx('', 'Expense')" style="cursor:pointer"><div class="l"><b>${esc(x.c.Name)}</b><small>${dueDay(x.c)}${th(dueDay(x.c))} of each month${x.paid > 0 ? ' · paid ' + fmt(x.paid) : ''}</small></div>
+  const billRow = x => `<div class="ov-r" onclick="editTx('', 'Expense')" style="cursor:pointer"><div class="l"><b>${esc(x.c.Name)}</b><small>${esc(x.acct)} · ${dueDay(x.c)}${th(dueDay(x.c))} of each month${x.paid > 0 ? ' · paid ' + fmt(x.paid) : ''}</small></div>
     <div class="rt"><b>${x.b ? fmt(x.paid > 0 ? x.left : x.b) : ''}</b><br>${chipFor(x.days)}</div></div>`;
-  const doneRow = x => `<div class="ov-r"><div class="l"><b>${esc(x.c.Name)}</b><small>Next ${shortDate(x.next)}</small></div><div class="rt"><span class="chip ok">✓ Paid</span></div></div>`;
+  const doneRow = x => `<div class="ov-r"><div class="l"><b>${esc(x.c.Name)}</b><small>${esc(x.acct)} · next ${shortDate(x.next)}</small></div><div class="rt"><span class="chip ok">✓ Paid</span></div></div>`;
   const dueTotal = sum(open, x => x.b ? (x.paid > 0 ? x.left : x.b) : 0);
   const billsHtml = bills.length
     ? `<div class="ov">${open.map(billRow).join('')}${done.map(doneRow).join('')}</div>`
-    : `<div class="ov"><div class="ov-hint">Give a budget category a due day (Budget → tap the category → Due day) and it will appear here with the days left.</div></div>`;
+    : `<div class="ov"><div class="ov-hint">Open Budget, pick an account, tap a category and set its due day. It will appear here with the days left.</div></div>`;
 
   // savings accounts
   const sav = leafList().filter(a => a.Type === 'Savings');
@@ -1004,18 +1029,19 @@ function more() {
   ${tile('goals', '⭐', 'Goals', D.Goals.length + (D.Goals.length === 1 ? ' goal' : ' goals'))}
   ${tile('loans', '🤝', 'Loans', `Owed to you ${fmt(lent)} · You owe ${fmt(owe)}`)}
   ${tile('inv', '📈', 'Investments', `Unit trusts ${short(sum(D.Assets.filter(a => a.Kind === 'Unit Trust'), a => calc(a).value))} · Shares ${short(sum(D.Assets.filter(a => a.Kind === 'Share'), a => calc(a).value))}`)}
-  ${tile('tabs', '↕', 'Tab order', 'Change the order of the bottom tabs')}
+  ${tile('tabs', '↕', 'Tabs', 'Choose and reorder the bottom tabs')}
+  ${allTabs().filter(t => hiddenSet().has(t[0])).map(t => `<div class="card row" onclick="go('${t[0]}')"><div><b>${t[1]} ${t[2]}</b></div><span class="mute">›</span></div>`).join('')}
   <div class="card row" onclick="mmSettings()"><div><b>☁ Sync settings</b><div class="mute">Web App URL and access key. Tap to sync now.</div></div><span class="mute">›</span></div>`;
 }
 function tabsScreen() {
-  const L = tabList();
-  return `<div class="back" onclick="sub=null;render()">‹ More</div><h1>Tab order</h1>
-  <div class="mute" style="margin:-6px 0 12px">Drag ⠿ to reorder. The first tab is the one the app opens on.</div>
-  <div class="card">${L.map(t => `<div class="item row dr" data-kind="tabs" data-group="t" data-id="${t[0]}"><b>${t[1]} ${t[2]}</b><span class="grip">⠿</span></div>`).join('')}</div>
-  <button class="btn ghost" onclick="setSet('TabOrder','');render()">Reset order</button>`;
+  const L = allTabs(), h = hiddenSet();
+  return `<div class="back" onclick="sub=null;render()">‹ More</div><h1>Tabs</h1>
+  <div class="mute" style="margin:-6px 0 12px">Tick the tabs to show in the bottom bar and drag ⠿ to reorder. Hidden tabs stay available in More. The first ticked tab is the one the app opens on.</div>
+  <div class="card">${L.map(t => `<div class="item row dr" data-kind="tabs" data-group="t" data-id="${t[0]}"><label style="display:flex;align-items:center;gap:12px;flex:1"><input type="checkbox" style="width:20px;height:20px" ${h.has(t[0]) ? '' : 'checked'} ${t[0] === 'more' ? 'disabled' : ''} onchange="toggleTab('${t[0]}')"><b>${t[1]} ${t[2]}</b></label><span class="grip">⠿</span></div>`).join('')}</div>
+  <button class="btn ghost" onclick="setSet('TabOrder','');setSet('HiddenTabs','');render()">Reset</button>`;
 }
 function moveTab(k, dir) {
-  const ord = tabList().map(t => t[0]), i = ord.indexOf(k), j = i + dir;
+  const ord = allTabs().map(t => t[0]), i = ord.indexOf(k), j = i + dir;
   if (j < 0 || j >= ord.length) return;
   ord.splice(i, 1); ord.splice(j, 0, k);
   setSet('TabOrder', ord.join(',')); render();
@@ -1280,11 +1306,12 @@ function editAcctBudget(catId, acct) {
   const ex = D.AccBudgets.find(x => x.Category === c.Name && x.Account === ac);
   const others = sum(D.AccBudgets.filter(x => x.Category === c.Name && x.Account !== ac), x => x.Amount);
   openForm(esc(c.Name) + ' · ' + esc(ac), 'AccBudgets', [
-    {k:'Amount', l:'Monthly budget for this account (LKR)', t:'number'}
-  ], {Amount: ex ? ex.Amount : ''}, {
+    {k:'Amount', l:'Monthly budget for this account (LKR)', t:'number'},
+    {k:'DueDay', l:'Due day of the month, 1–31 (optional, e.g. 18 for insurance). Shows in Overview', t:'number'}
+  ], {Amount: ex ? ex.Amount : '', DueDay: ex ? ex.DueDay : ''}, {
     noDelete: true,
-    extra: `<div class="mute" style="margin-bottom:12px">Other accounts: ${fmt(others)}<br>Category total after saving: <b id="abTot">${fmt(others + (ex ? +ex.Amount : 0))}</b><br>Leave blank or 0 to remove this account's budget.</div>`,
-    submit: o => call('saveAccBudget', c.ID, ac, +o.Amount || 0)
+    extra: `<div class="mute" style="margin-bottom:12px">Other accounts: ${fmt(others)}<br>Category total after saving: <b id="abTot">${fmt(others + (ex ? +ex.Amount : 0))}</b><br>Leave amount and due day blank to remove this account's budget.</div>`,
+    submit: o => call('saveAccBudget', c.ID, ac, +o.Amount || 0, +o.DueDay || 0)
   });
   $('#f_Amount').oninput = () => { $('#abTot').textContent = fmt(others + (parseFloat($('#f_Amount').value) || 0)); };
 }
@@ -1491,8 +1518,7 @@ function editCat(id) {
   openForm(id ? 'Edit category' : 'New category', 'Categories', [
     {k:'Type', l:'Type', t:'select', o:['Expense','Income']},
     {k:'Name', l:'Name', req:true},
-    {k:'Budget', l: split ? 'Monthly budget in LKR (total of its account budgets; change them in Budget)' : 'Monthly budget in LKR (income: monthly target)', t:'number', ro: split},
-    {k:'DueDay', l:'Due day of the month, 1–31 (optional, e.g. 18 for insurance). Shows in Overview', t:'number'}
+    {k:'Budget', l: split ? 'Monthly budget in LKR (total of its account budgets; change them in Budget)' : 'Monthly budget in LKR (income: monthly target)', t:'number', ro: split}
   ], v);
 }
 function editAcc(id) {
