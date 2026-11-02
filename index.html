@@ -28,7 +28,7 @@
     InvTx: ['ID','AssetID','Date','Type','Units','Price','Fees','Amount','Account','Note'],
     Prices: ['ID','AssetID','Date','Price']
   };
-  const VER = 'v8';
+  const VER = 'v9';
   const LS = window.localStorage;
   const cfg = () => ({ url: LS.getItem('mm_url') || '', key: LS.getItem('mm_key') || '' });
   const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -345,6 +345,15 @@ nav button{flex:1;background:none;border:0;color:var(--mute);padding:9px 0 7px;f
 nav button span{display:block;font-size:18px}
 nav button{font-size:8.5px;min-width:0}
 .ov-date{color:var(--mute);font-size:13px;margin:-8px 0 4px}
+.ov-sec{--c:#0f766e;--ct:rgba(15,118,110,.12)}
+.ov-sec .ov{border-top:3px solid var(--c)}
+.ov-sec .ov-h b{color:var(--c)}.ov-sec .ov-h b::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c);margin-right:7px}
+.ov-sec .chip{background:var(--ct);color:var(--c)}
+.ov-sec .chip.bad{background:rgba(185,28,28,.13);color:var(--warn)}
+.ov-sec .chip.soon{background:rgba(202,138,4,.18);color:var(--soon)}
+.ov-sec .chip.ok{background:rgba(15,118,110,.14);color:var(--acc)}
+.ov-sec .bar i{background:var(--c)}
+.ov-sec .ov-sub{color:var(--c);font-weight:600}
 .ov-h{display:flex;justify-content:space-between;align-items:baseline;margin:24px 4px 8px}
 .ov-h b{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--mute);font-weight:600}
 .ov-h span{font-size:13px;font-weight:600}
@@ -432,6 +441,7 @@ svg text{fill:var(--mute)}
    and every rate update is saved as a new row in the Rates sheet (history is never overwritten). */
 let D = {Categories:[],Accounts:[],Transactions:[],Goals:[],Settings:[],Rates:[],Loans:[],LoanPayments:[],AccBudgets:[],Assets:[],InvTx:[],Prices:[]};
 let homeAcct = null, booted = false;     // homeAcct null = not chosen yet, use the default account
+let homeOpen = null, stmtFrom = null;
 let tab = 'home', M = null, homeAll = false, reorder = false, sub = null, invKind = 'Unit Trust', budAcct = null, stmtAcc = null, stmtShown = 40, showSettled = false, reopen = null;
 const now = new Date();
 let month = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
@@ -546,7 +556,7 @@ function render() {
   $('#fab').style.display = (tab === 'home' || tab === 'tx') ? 'block' : 'none';
   $('#app').innerHTML = ({home, ov, tx, ana, budget, acc, more})[tab]();
 }
-function go(t) { tab = t; reorder = false; sub = null; stmtAcc = null; render(); window.scrollTo(0, 0); }
+function go(t) { tab = t; reorder = false; sub = null; stmtAcc = null; stmtFrom = null; render(); window.scrollTo(0, 0); }
 function shift(d) {
   const [y, m] = month.split('-').map(Number);
   const dt = new Date(y, m - 1 + d, 1);
@@ -592,6 +602,7 @@ function pickAcct() {
 function setHomeAcct(i) { homeAcct = HOME_OPTS[i] || ''; closeM(); render(); }
 function makeDefault(i) { const n = HOME_OPTS[i] || ''; setSet('HomeAccount', n); homeAcct = n; closeM(); render(); }
 
+function toggleHome(id) { homeOpen = homeOpen === id ? null : id; render(); }
 function home() {
   if (homeAcct === null) homeAcct = defAcct();
   if (homeAcct && !homeList().some(x => x.Name === homeAcct)) homeAcct = '';
@@ -609,11 +620,18 @@ function home() {
   const incAll = D.Categories.filter(c => c.Type === 'Income').map(c => ({c, s: got(c), b: bud(c)}));
   const incs = homeAll ? incAll : incAll.filter(r => r.b > 0 || r.s > 0);
   const head = (x, y, z) => `<div class="cols h"><span class="nm">${x}</span><span>${y}</span><span>${z}</span><span>Left</span></div>`;
+  const editCall = c => a ? "editAcctBudget('" + c.ID + "','" + esc(a.Name).replace(/'/g, "\\'") + "')" : "editCat('" + c.ID + "')";
+  const hist = c => {                                      // this month's transactions of one category (minimal)
+    const l = tx.filter(t => (c.Type === 'Expense' ? isOut(t) : isInTag(t)) && t.Category === c.Name);
+    return `<div style="margin:6px 0 4px;padding:6px 10px;background:var(--bg);border-radius:10px" onclick="event.stopPropagation()">
+      ${l.map(t => `<div class="row" style="padding:5px 0;font-size:13.5px" onclick="editTx('${t.ID}')"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span class="mute">${esc(String(t.Date).slice(5))}</span> ${esc(t.Note || (a ? '' : t.Account))}</span><b style="white-space:nowrap">${n0(val(t))}</b></div>`).join('') || '<div class="mute" style="font-size:13px;padding:4px 0">Nothing this month</div>'}
+      <div style="text-align:right"><span class="lnk" style="margin:0" onclick="${editCall(c)}">Edit budget</span></div></div>`;
+  };
   const row = (c, s, b, isExp) => {
     const left = b - s;
-    return `<div class="crow" onclick="${a ? "editAcctBudget('" + c.ID + "','" + esc(a.Name).replace(/'/g, "\\'") + "')" : "editCat('" + c.ID + "')"}"><div class="cols"><span class="nm">${esc(c.Name)}</span>
+    return `<div class="crow" onclick="toggleHome('${c.ID}')"><div class="cols"><span class="nm"><span class="mute">${homeOpen === c.ID ? '▾' : '▸'}</span> ${esc(c.Name)}</span>
       <span class="mute">${b ? num(b) : '–'}</span><span>${num(s)}</span>
-      <span class="${isExp && b && left < 0 ? 'warn' : ''}"><b>${b ? num(left) : '–'}</b></span></div>${b ? progress(s, b, 'thin') : ''}</div>`;
+      <span class="${isExp && b && left < 0 ? 'warn' : ''}"><b>${b ? num(left) : '–'}</b></span></div>${b ? progress(s, b, 'thin') : ''}${homeOpen === c.ID ? hist(c) : ''}</div>`;
   };
   const shown = homeAll ? rows : rows.slice(0, 5);
   // loans only count for the account they were lent from / received into
@@ -664,9 +682,8 @@ function tx() {
       if (+t.ToAmount) more.push('Received ' + fmtC(t.ToAmount, cur(accByName(t.ToAccount))) + (+t.Rate ? ' @ ' + n2(t.Rate) : ''));
       if (t.Category) more.push('Counts to ' + esc(t.Category));
     } else if (c === 'USD') more.push('≈ ' + fmt(lkr(t)) + ' @ ' + n2(t.Rate));
-    const det = `<div style="padding-top:8px;font-size:14px">${t.Note ? `<div>${esc(t.Note)}</div>` : '<div class="mute">No note</div>'}
-      ${more.length ? `<div class="mute" style="font-size:12px;margin-top:2px">${more.join(' · ')}</div>` : ''}
-      <div style="margin-top:8px"><span class="lnk" onclick="event.stopPropagation();editTx('${t.ID}')">Edit</span></div></div>`;
+    const info = [t.Note ? esc(t.Note) : '', ...more].filter(Boolean).join(' · ');
+    const det = `<div class="mute" style="padding-top:5px;font-size:13px">${info || 'No note'} <span class="lnk" style="margin-left:8px" onclick="event.stopPropagation();editTx('${t.ID}')">Edit</span></div>`;
     return `<div class="item" onclick="toggleTx('${t.ID}')"><div class="row"><div><b>${title}</b> <span class="mute" style="font-size:12px">${sub}${t.Note && !open ? ' · 📝' : ''}</span></div>
       <b class="${cls}" style="white-space:nowrap">${sign} ${fmtC(t.Amount, c)}</b></div>${open ? det : ''}</div>`; }).join('')}</div>`
     : '<div class="empty">Nothing recorded this month.<br>Tap + to add a transaction.</div>'}`;
@@ -796,21 +813,8 @@ document.addEventListener('pointerup', endDrag);
 document.addEventListener('pointercancel', endDrag);
 document.addEventListener('contextmenu', e => { if (e.target.closest && e.target.closest('.grip')) e.preventDefault(); });
 function toggleBudDef() { setSet('BudgetAccount', getSet('BudgetAccount') === budAcct ? '' : budAcct); render(); }
-let budOpen = null, budShown = 8;
-function toggleBud(id) { budOpen = budOpen === id ? null : id; budShown = 8; render(); }
-function catHistory(c, acct, editCall) {                  // earlier transactions of one budget item, newest first
-  const names = acct ? groupNames(accByName(acct)) : null;
-  const l = D.Transactions.filter(t => (c.Type === 'Expense' ? isOut(t) : isInTag(t)) && t.Category === c.Name &&
-      (!names || names.has(c.Type !== 'Expense' && t.Type === 'Transfer' ? t.ToAccount : t.Account)))
-    .sort((a, b) => String(a.Date) < String(b.Date) ? 1 : -1);
-  const rows = l.slice(0, budShown).map(t => `<div class="row" style="padding:7px 0;font-size:14px" onclick="editTx('${t.ID}')"><div style="min-width:0"><span class="mute">${esc(t.Date)}</span>${acct ? '' : ' · ' + esc(t.Account)}${t.Note ? `<div class="mute" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.Note)}</div>` : ''}</div><b style="white-space:nowrap">${fmt(val(t))}</b></div>`).join('');
-  return `<div style="margin-top:8px;padding:8px 10px;background:var(--bg);border-radius:10px">
-    <div class="row" style="font-size:12px;color:var(--mute)"><span>${l.length ? 'Previous transactions · ' + l.length : 'No transactions yet'}</span><span class="lnk" style="margin:0" onclick="${editCall}">Edit budget</span></div>
-    ${rows}${l.length > budShown ? `<div class="more" onclick="budShown+=10;render()">Show more</div>` : ''}</div>`;
-}
-function budRow(c, acct, amount, tag, editCall) {
-  const open = budOpen === c.ID;
-  return `<div class="item"><div class="row" onclick="toggleBud('${c.ID}')" style="cursor:pointer"><span><span class="mute">${open ? '▾' : '▸'}</span> ${esc(c.Name)}${tag || ''}</span>${amount}</div>${open ? catHistory(c, acct, editCall) : ''}</div>`;
+function budRow(c, amount, tag, editCall) {
+  return `<div class="item row" onclick="${editCall}"><span>${esc(c.Name)}${tag || ''}</span>${amount}</div>`;
 }
 function budget() {
   const leaves = leafList();
@@ -827,20 +831,20 @@ function budget() {
     const rows = l => l.map(c => { const v = amt(c);
       if (reorder) return dragCat(c);
       const ab = D.AccBudgets.find(x => x.Account === budAcct && x.Category === c.Name), dd = ab ? dueDay(ab) : 0;
-      return budRow(c, budAcct, `<b class="${v ? '' : 'mute'}">${v ? fmt(v) : '–'}</b>`, dd ? ` <span class="mute">· due ${dd}${th(dd)}</span>` : '', `editAcctBudget('${c.ID}')`); }).join('')
+      return budRow(c, `<b class="${v ? '' : 'mute'}">${v ? fmt(v) : '–'}</b>`, dd ? ` <span class="mute">· due ${dd}${th(dd)}</span>` : '', `editAcctBudget('${c.ID}')`); }).join('')
       || '<div class="mute">None yet</div>';
     const be = sum(ex, amt), bi = sum(inc, amt);
     return `${sel}${reorder ? '<div class="mute" style="margin:0 0 10px">Drag ⠿ to change the order. It is used everywhere in the app.</div>' : head3(bi, be)}
     <h2>Expense categories</h2><div class="card tight">${rows(ex)}</div>
     <h2>Income categories</h2><div class="card tight">${rows(inc)}</div>
-    ${reorder ? '' : `<div class="mute">Monthly budget for ${esc(budAcct)}. The same amounts apply every month. Tap a category to see its transactions.</div>`}
+    ${reorder ? '' : `<div class="mute">Monthly budget for ${esc(budAcct)}. The same amounts apply every month. Tap a category to set its budget and due day.</div>`}
     <div class="btns">${reorder ? '<button class="btn" onclick="reorder=false;render()">Done</button>'
       : '<button class="btn" onclick="editCat()">Add category</button><button class="btn ghost" onclick="reorder=true;render()">↕ Reorder categories</button>'}</div>`;
   }
   const be = sum(ex, c => c.Budget), bi = sum(inc, c => c.Budget);
   const rows = l => l.map((c, i) => reorder
     ? dragCat(c)
-    : budRow(c, '', `<span>${fmt(c.Budget)}</span>`, D.AccBudgets.some(x => x.Category === c.Name) ? ' <span class="mute">· by account</span>' : '', `editCat('${c.ID}')`)).join('')
+    : budRow(c, `<span>${fmt(c.Budget)}</span>`, D.AccBudgets.some(x => x.Category === c.Name) ? ' <span class="mute">· by account</span>' : '', `editCat('${c.ID}')`)).join('')
     || '<div class="mute">None yet</div>';
   return `${sel}
   <div class="mute" style="margin:0 0 10px">${reorder ? 'Drag ⠿ to change the order. It is used everywhere in the app.' : 'Monthly budget in LKR. The same amounts apply every month. Pick an account above to budget per account.'}</div>
@@ -862,7 +866,8 @@ function accNode(a, depth) {
     ${tg > 0 ? `<div class="row mute" style="font-size:12px"><span>Target ${num(tg)}</span><span>${Math.max(0, t / tg * 100).toFixed(0)}%</span></div>${progress(t, tg, 'thin')}` : ''}
     </div>${kids(a).map(k => accNode(k, depth + 1)).join('')}</div>`;
 }
-function openStmt(id) { tab = 'acc'; reorder = false; sub = null; stmtAcc = id; stmtShown = 40; render(); window.scrollTo(0, 0); }
+function closeStmt() { stmtAcc = null; if (stmtFrom) tab = stmtFrom; stmtFrom = null; render(); window.scrollTo(0, 0); }
+function openStmt(id) { stmtFrom = tab !== 'acc' ? tab : null; tab = 'acc'; reorder = false; sub = null; stmtAcc = id; stmtShown = 40; render(); window.scrollTo(0, 0); }
 function describe(e) {
   const r = e.r;
   if (e.k === 'tx') {
@@ -884,9 +889,9 @@ function statement() {
   const rows = es.map(e => { bal += e.amt; return Object.assign({}, e, {bal}); }).reverse();
   const shown = rows.slice(0, stmtShown), all = rows.length <= stmtShown;
   const row = e => { const d = describe(e);
-    return `<div class="srow" ${d.go ? `onclick="${d.go}"` : ''}><div><b>${esc(d.title)}</b><div class="mute">${esc(e.d)}${d.sub ? ' · ' + esc(d.sub) : ''}</div></div>
-      <div class="right" style="white-space:nowrap"><b class="${e.amt < 0 ? 'exp' : 'inc'}">${e.amt < 0 ? '−' : '+'} ${f(Math.abs(e.amt))}</b><div class="mute">${f(e.bal)}</div></div></div>`; };
-  return `<div class="back" onclick="stmtAcc=null;render()">‹ Accounts</div>
+    return `<div class="srow" style="padding:7px 0;align-items:baseline" ${d.go ? `onclick="${d.go}"` : ''}><div style="min-width:0"><span class="mute">${esc(String(e.d).slice(5))}</span> ${esc(d.title)}</div>
+      <b class="${e.amt < 0 ? 'exp' : 'inc'}" style="white-space:nowrap;font-weight:500">${e.amt < 0 ? '−' : '+'} ${f(Math.abs(e.amt))}</b></div>`; };
+  return `<div class="back" onclick="closeStmt()">‹ ${stmtFrom === 'ov' ? 'Overview' : stmtFrom === 'home' ? 'Home' : 'Accounts'}</div>
   <div class="card tight"><div class="row"><div><b style="font-size:17px">${esc(a.Name)}</b> <span class="mute">${c}${a.Type ? ' · ' + esc(a.Type) : ''}</span></div>
     <span class="lnk" onclick="editAcc('${a.ID}')">Edit</span></div>
     <div class="mute" style="margin-top:4px">Ending balance</div>
@@ -929,6 +934,7 @@ const openLoan = id => { tab = 'more'; sub = 'loans'; reorder = false; render();
 const openAsset = id => { const a = D.Assets.find(x => x.ID === id); tab = 'more'; sub = 'inv'; invKind = a ? a.Kind : invKind; reorder = false; render(); window.scrollTo(0, 0); showAsset(id); };
 const openSub = k => { tab = 'more'; sub = k; reorder = false; render(); window.scrollTo(0, 0); };
 const ovHead = (t, right) => `<div class="ov-h"><b>${t}</b><span>${right || ''}</span></div>`;
+const ovSec = (c, ct, html) => `<div class="ov-sec" style="--c:${c};--ct:${ct}">${html}</div>`;
 
 function billsDue() {                                      // account budgets that have a due day
   const n = new Date(), ym = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0');
@@ -989,11 +995,11 @@ function ov() {
 
   const dt = new Date().toLocaleDateString(undefined, {weekday: 'long', day: 'numeric', month: 'long'});
   return `<h1>Overview</h1><div class="ov-date">${dt}</div>
-  ${ovHead('Due', open.length ? fmt(dueTotal) + ' to pay' : bills.length ? 'All paid ✓' : '')}${billsHtml}
-  ${ovHead('Savings', fmt(savTotal))}${savHtml}
-  ${ovHead('Loans', act.length ? 'Net ' + sgn(sum(lent, outstanding) - sum(owe, outstanding)) : '')}${loansHtml}
-  ${ovHead('Goals', D.Goals.length ? D.Goals.length + (D.Goals.length === 1 ? ' goal' : ' goals') : '')}${goalsHtml}
-  ${ovHead('Investments', held.length ? fmt(invTotal) : '')}${invHtml}`;
+  ${ovSec('#ea580c', 'rgba(234,88,12,.13)', ovHead('Due', open.length ? fmt(dueTotal) + ' to pay' : bills.length ? 'All paid ✓' : '') + billsHtml)}
+  ${ovSec('#0d9488', 'rgba(13,148,136,.13)', ovHead('Savings', fmt(savTotal)) + savHtml)}
+  ${ovSec('#2563eb', 'rgba(37,99,235,.13)', ovHead('Loans', act.length ? 'Net ' + sgn(sum(lent, outstanding) - sum(owe, outstanding)) : '') + loansHtml)}
+  ${ovSec('#c026d3', 'rgba(192,38,211,.13)', ovHead('Goals', D.Goals.length ? D.Goals.length + (D.Goals.length === 1 ? ' goal' : ' goals') : '') + goalsHtml)}
+  ${ovSec('#4f46e5', 'rgba(79,70,229,.13)', ovHead('Investments', held.length ? fmt(invTotal) : '') + invHtml)}`;
 }
 
 function goals() {
