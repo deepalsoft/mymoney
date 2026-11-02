@@ -15,7 +15,7 @@
    - queues changes and sends them to your Google Sheet when online */
 (function () {
   const H = {
-    Categories: ['ID','Type','Name','Budget','Order'],
+    Categories: ['ID','Type','Name','Budget','Order','DueDay'],
     Accounts: ['ID','Name','Parent','Type','Opening','Currency','Target','Order'],
     Transactions: ['ID','Date','Type','Category','Account','ToAccount','Amount','Note','Rate','ToAmount','Photo'],
     Goals: ['ID','Name','Target','Saved','TargetDate','Account'],
@@ -28,7 +28,7 @@
     InvTx: ['ID','AssetID','Date','Type','Units','Price','Fees','Amount','Account','Note'],
     Prices: ['ID','AssetID','Date','Price']
   };
-  const VER = 'v6';
+  const VER = 'v7';
   const LS = window.localStorage;
   const cfg = () => ({ url: LS.getItem('mm_url') || '', key: LS.getItem('mm_key') || '' });
   const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -292,11 +292,11 @@
 <style>
 :root{
   --bg:#f2f5f4;--card:#ffffff;--ink:#16302b;--mute:#6b7f7a;--line:#dde5e2;
-  --acc:#0f766e;--inc:#0f766e;--exp:#c2410c;--warn:#b91c1c;--track:#e3ebe8;
+  --acc:#0f766e;--inc:#0f766e;--exp:#c2410c;--warn:#b91c1c;--track:#e3ebe8;--soon:#a16207;
 }
 @media (prefers-color-scheme:dark){
   :root{--bg:#0e1917;--card:#16241f;--ink:#e6f0ed;--mute:#8fa59f;--line:#243630;
-  --acc:#2dd4bf;--inc:#2dd4bf;--exp:#fb923c;--warn:#f87171;--track:#243630}
+  --acc:#2dd4bf;--inc:#2dd4bf;--exp:#fb923c;--warn:#f87171;--track:#243630;--soon:#facc15}
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--ink);
@@ -341,7 +341,24 @@ h2{font-size:15px;margin:22px 0 8px;color:var(--mute);font-weight:600}
 nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);border-top:1px solid var(--line);
   padding-bottom:env(safe-area-inset-bottom,0px);z-index:5}
 nav button{flex:1;background:none;border:0;color:var(--mute);padding:9px 0 7px;font-size:9px;white-space:nowrap;overflow:hidden}
-nav button span{display:block;font-size:19px}
+nav button span{display:block;font-size:18px}
+nav button{font-size:8.5px;min-width:0}
+.ov-date{color:var(--mute);font-size:13px;margin:-8px 0 4px}
+.ov-h{display:flex;justify-content:space-between;align-items:baseline;margin:24px 4px 8px}
+.ov-h b{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--mute);font-weight:600}
+.ov-h span{font-size:13px;font-weight:600}
+.ov{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:2px 14px}
+.ov-r{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
+.ov-r:last-child{border-bottom:0}
+.ov-r .l{min-width:0}.ov-r .l b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ov-r .l small{color:var(--mute);font-size:12px}
+.ov-r .rt{text-align:right;white-space:nowrap}.ov-r .rt b{font-weight:600}
+.ov-sub{font-size:12px;color:var(--mute);padding:10px 0 0;display:flex;justify-content:space-between}
+.chip{display:inline-block;font-size:11.5px;padding:2px 9px;border-radius:99px;background:var(--track);color:var(--mute);white-space:nowrap;margin-top:2px}
+.chip.bad{background:rgba(185,28,28,.13);color:var(--warn)}
+.chip.soon{background:rgba(202,138,4,.16);color:var(--soon)}
+.chip.ok{background:rgba(15,118,110,.13);color:var(--acc)}
+.ov-hint{color:var(--mute);font-size:13px;padding:12px 0}
 nav button.on{color:var(--acc);font-weight:700}
 .fab{position:fixed;right:18px;bottom:calc(76px + env(safe-area-inset-bottom,0px));width:56px;height:56px;border-radius:28px;
   border:0;background:var(--acc);color:#fff;font-size:30px;z-index:6;box-shadow:0 4px 14px rgba(0,0,0,.25)}
@@ -509,7 +526,7 @@ const lkrAccs = () => D.Accounts.filter(a => cur(a) === 'LKR').map(a => a.Name);
 const roots = () => D.Accounts.filter(a => !a.Parent || !D.Accounts.some(p => p.Name === a.Parent));
 
 /* ---------- navigation ---------- */
-const TABS = [['home','🏠','Home'],['tx','🧾','Transactions'],['ana','📊','Analysis'],['budget','🎯','Budget'],['acc','🏦','Accounts'],['more','☰','More']];
+const TABS = [['home','🏠','Home'],['ov','✨','Overview'],['tx','🧾','Transactions'],['ana','📊','Analysis'],['budget','🎯','Budget'],['acc','🏦','Accounts'],['more','☰','More']];
 const tabList = () => {
   const known = TABS.map(t => t[0]);
   const saved = Array.from(new Set(String(getSet('TabOrder') || '').split(',').filter(k => known.indexOf(k) >= 0)));
@@ -519,7 +536,7 @@ const tabList = () => {
 function render() {
   $('#nav').innerHTML = tabList().map(t => `<button class="${tab===t[0]?'on':''}" onclick="go('${t[0]}')"><span>${t[1]}</span>${t[2]}</button>`).join('');
   $('#fab').style.display = (tab === 'home' || tab === 'tx') ? 'block' : 'none';
-  $('#app').innerHTML = ({home, tx, ana, budget, acc, more})[tab]();
+  $('#app').innerHTML = ({home, ov, tx, ana, budget, acc, more})[tab]();
 }
 function go(t) { tab = t; reorder = false; sub = null; stmtAcc = null; render(); window.scrollTo(0, 0); }
 function shift(d) {
@@ -798,7 +815,7 @@ function budget() {
   const be = sum(ex, c => c.Budget), bi = sum(inc, c => c.Budget);
   const rows = l => l.map((c, i) => reorder
     ? dragCat(c)
-    : `<div class="item row" onclick="editCat('${c.ID}')"><b>${esc(c.Name)}${D.AccBudgets.some(x => x.Category === c.Name) ? ' <span class="mute">· by account</span>' : ''}</b><span>${fmt(c.Budget)}</span></div>`).join('')
+    : `<div class="item row" onclick="editCat('${c.ID}')"><b>${esc(c.Name)}${D.AccBudgets.some(x => x.Category === c.Name) ? ' <span class="mute">· by account</span>' : ''}${dueDay(c) ? ' <span class="mute">· due ' + dueDay(c) + th(dueDay(c)) + '</span>' : ''}</b><span>${fmt(c.Budget)}</span></div>`).join('')
     || '<div class="mute">None yet</div>';
   return `${sel}
   <div class="mute" style="margin:0 0 10px">${reorder ? 'Drag ⠿ to change the order. It is used everywhere in the app.' : 'Monthly budget in LKR. The same amounts apply every month. Pick an account above to budget per account.'}</div>
@@ -870,6 +887,88 @@ function acc() {
     <button class="btn ghost" onclick="reorder=true;render()">↕ Reorder</button></div>
   <div class="grid3" style="grid-template-columns:1fr 1fr;margin-top:8px"><button class="btn ghost" onclick="tab='more';sub='tabs';reorder=false;render();window.scrollTo(0,0)">↕ Reorder tabs</button>
     <button class="btn ghost" onclick="pickAcct()">★ Default account</button></div>`;
+}
+
+
+/* ---------- overview ---------- */
+const dueDay = c => { const d = Math.round(+c.DueDay); return d >= 1 && d <= 31 ? d : 0; };
+const th = d => (d % 100 >= 11 && d % 100 <= 13) ? 'th' : ({1:'st',2:'nd',3:'rd'}[d % 10] || 'th');
+const midnight = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const parseD = str => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(str || '')); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };
+const daysTo = d => Math.round((midnight(d) - midnight(new Date())) / 864e5);
+const dueIn = (y, m, day) => new Date(y, m, Math.min(day, new Date(y, m + 1, 0).getDate()));   // 31st in a short month = last day
+const when = n => n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : n > 1 ? 'in ' + n + ' days' : (n === -1 ? '1 day overdue' : -n + ' days overdue');
+const chipFor = n => `<span class="chip ${n < 0 ? 'bad' : n <= 3 ? 'soon' : ''}">${when(n)}</span>`;
+const shortDate = d => d.toLocaleString(undefined, {day: 'numeric', month: 'short'});
+const openLoan = id => { tab = 'more'; sub = 'loans'; reorder = false; render(); window.scrollTo(0, 0); showLoan(id); };
+const openAsset = id => { const a = D.Assets.find(x => x.ID === id); tab = 'more'; sub = 'inv'; invKind = a ? a.Kind : invKind; reorder = false; render(); window.scrollTo(0, 0); showAsset(id); };
+const openSub = k => { tab = 'more'; sub = k; reorder = false; render(); window.scrollTo(0, 0); };
+const ovHead = (t, right) => `<div class="ov-h"><b>${t}</b><span>${right || ''}</span></div>`;
+
+function billsDue() {                                      // budget categories that have a due day
+  const n = new Date(), ym = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0');
+  return D.Categories.filter(c => c.Type === 'Expense' && dueDay(c)).map(c => {
+    const b = +c.Budget || 0;
+    const paid = sum(D.Transactions.filter(t => isOut(t) && t.Category === c.Name && String(t.Date).slice(0, 7) === ym), val);
+    const done = b > 0 ? paid >= b - 0.5 : paid > 0;
+    const due = dueIn(n.getFullYear(), n.getMonth(), dueDay(c));
+    const next = dueIn(n.getFullYear(), n.getMonth() + 1, dueDay(c));
+    return {c, b, paid, done, due, next, days: daysTo(due), left: Math.max(b - paid, 0)};
+  });
+}
+
+function ov() {
+  const bills = billsDue();
+  const open = bills.filter(x => !x.done).sort((a, b) => a.days - b.days);
+  const done = bills.filter(x => x.done).sort((a, b) => a.next - b.next);
+  const billRow = x => `<div class="ov-r" onclick="editTx('', 'Expense')" style="cursor:pointer"><div class="l"><b>${esc(x.c.Name)}</b><small>${dueDay(x.c)}${th(dueDay(x.c))} of each month${x.paid > 0 ? ' · paid ' + fmt(x.paid) : ''}</small></div>
+    <div class="rt"><b>${x.b ? fmt(x.paid > 0 ? x.left : x.b) : ''}</b><br>${chipFor(x.days)}</div></div>`;
+  const doneRow = x => `<div class="ov-r"><div class="l"><b>${esc(x.c.Name)}</b><small>Next ${shortDate(x.next)}</small></div><div class="rt"><span class="chip ok">✓ Paid</span></div></div>`;
+  const dueTotal = sum(open, x => x.b ? (x.paid > 0 ? x.left : x.b) : 0);
+  const billsHtml = bills.length
+    ? `<div class="ov">${open.map(billRow).join('')}${done.map(doneRow).join('')}</div>`
+    : `<div class="ov"><div class="ov-hint">Give a budget category a due day (Budget → tap the category → Due day) and it will appear here with the days left.</div></div>`;
+
+  // savings accounts
+  const sav = leafList().filter(a => a.Type === 'Savings');
+  const savTotal = sum(sav, a => own(a) * rateOf(cur(a)));
+  const savHtml = sav.length ? `<div class="ov">${sav.map(a => `<div class="ov-r" onclick="openStmt('${a.ID}')" style="cursor:pointer"><div class="l"><b>${esc(a.Name)}</b>${a.Parent ? `<small>${esc(a.Parent)}</small>` : ''}</div>
+      <div class="rt"><b>${fmtC(own(a), cur(a))}</b>${cur(a) === 'USD' ? `<br><small class="mute">≈ ${fmt(own(a) * rateOf('USD'))}</small>` : ''}</div></div>`).join('')}</div>`
+    : `<div class="ov"><div class="ov-hint">Set an account’s type to Savings (Accounts → tap it) to see it here.</div></div>`;
+
+  // loans
+  const act = D.Loans.filter(l => outstanding(l) > 0.005);
+  const byDue = (a, b) => (a.DueDate || '9999') < (b.DueDate || '9999') ? -1 : 1;
+  const loanRow = l => { const d = parseD(l.DueDate);
+    return `<div class="ov-r" onclick="openLoan('${l.ID}')" style="cursor:pointer"><div class="l"><b>${esc(l.Person)}</b><small>${d ? 'Due ' + shortDate(d) : 'No due date'}</small></div>
+      <div class="rt"><b>${fmt(outstanding(l))}</b>${d ? '<br>' + chipFor(daysTo(d)) : ''}</div></div>`; };
+  const lent = act.filter(l => l.Direction === 'Lent').sort(byDue), owe = act.filter(l => l.Direction === 'Borrowed').sort(byDue);
+  const loanBlock = (title, list, cls) => list.length ? `<div class="ov-sub"><span>${title}</span><b class="${cls}">${fmt(sum(list, outstanding))}</b></div>${list.map(loanRow).join('')}` : '';
+  const loansHtml = act.length ? `<div class="ov">${loanBlock('Owed to you', lent, 'inc')}${loanBlock('You owe', owe, 'exp')}</div>`
+    : `<div class="ov"><div class="ov-hint">No open loans.</div></div>`;
+
+  // goals
+  const goalsHtml = D.Goals.length ? `<div class="ov">${D.Goals.map(g => { const t = +g.Target || 0, sv = +g.Saved || 0, pc = t > 0 ? Math.min(sv / t * 100, 100) : 0;
+    return `<div style="padding:12px 0;border-bottom:1px solid var(--line);cursor:pointer" onclick="openSub('goals')"><div class="ov-r" style="padding:0;border:0"><div class="l"><b>${esc(g.Name)}</b><small>${fmt(sv)} of ${fmt(t)}${g.TargetDate ? ' · by ' + esc(g.TargetDate) : ''}</small></div><span class="chip ${pc >= 100 ? 'ok' : ''}">${pc.toFixed(0)}%</span></div>${progress(sv, t, 'thin')}</div>`; }).join('')}</div>`
+    : `<div class="ov"><div class="ov-hint">No goals yet.</div></div>`;
+
+  // investments
+  const held = D.Assets.map(a => ({a, c: calc(a)})).filter(r => r.c.units > 1e-8);
+  const kind = k => { const rs = held.filter(r => r.a.Kind === k), v = sum(rs, r => r.c.value), cst = sum(rs, r => r.c.cost); return {rs, v, cst, pct: cst > 0 ? (v - cst) / cst * 100 : 0}; };
+  const ut = kind('Unit Trust'), sh = kind('Share');
+  const invRow = r => `<div class="ov-r" onclick="openAsset('${r.a.ID}')" style="cursor:pointer"><div class="l"><b>${esc(r.a.Name)}</b><small>${fmtU(r.c.units)} ${r.a.Kind === 'Share' ? 'shares' : 'units'}${r.a.Code ? ' · ' + esc(r.a.Code) : ''}</small></div>
+    <div class="rt"><b>${fmt(r.c.value)}</b><br><small class="${pl(r.c.unreal)}">${sgn(r.c.unreal)} · ${r.c.pct.toFixed(1)}%</small></div></div>`;
+  const invBlock = (title, k) => k.rs.length ? `<div class="ov-sub"><span>${title}</span><b class="${pl(k.v - k.cst)}">${fmt(k.v)} · ${k.pct >= 0 ? '+' : ''}${k.pct.toFixed(1)}%</b></div>${k.rs.map(invRow).join('')}` : '';
+  const invHtml = held.length ? `<div class="ov">${invBlock('Unit trusts', ut)}${invBlock('Shares', sh)}</div>` : `<div class="ov"><div class="ov-hint">No investments held yet.</div></div>`;
+  const invTotal = ut.v + sh.v;
+
+  const dt = new Date().toLocaleDateString(undefined, {weekday: 'long', day: 'numeric', month: 'long'});
+  return `<h1>Overview</h1><div class="ov-date">${dt}</div>
+  ${ovHead('Due', open.length ? fmt(dueTotal) + ' to pay' : bills.length ? 'All paid ✓' : '')}${billsHtml}
+  ${ovHead('Savings', fmt(savTotal))}${savHtml}
+  ${ovHead('Loans', act.length ? 'Net ' + sgn(sum(lent, outstanding) - sum(owe, outstanding)) : '')}${loansHtml}
+  ${ovHead('Goals', D.Goals.length ? D.Goals.length + (D.Goals.length === 1 ? ' goal' : ' goals') : '')}${goalsHtml}
+  ${ovHead('Investments', held.length ? fmt(invTotal) : '')}${invHtml}`;
 }
 
 function goals() {
@@ -1392,7 +1491,8 @@ function editCat(id) {
   openForm(id ? 'Edit category' : 'New category', 'Categories', [
     {k:'Type', l:'Type', t:'select', o:['Expense','Income']},
     {k:'Name', l:'Name', req:true},
-    {k:'Budget', l: split ? 'Monthly budget in LKR (total of its account budgets; change them in Budget)' : 'Monthly budget in LKR (income: monthly target)', t:'number', ro: split}
+    {k:'Budget', l: split ? 'Monthly budget in LKR (total of its account budgets; change them in Budget)' : 'Monthly budget in LKR (income: monthly target)', t:'number', ro: split},
+    {k:'DueDay', l:'Due day of the month, 1–31 (optional, e.g. 18 for insurance). Shows in Overview', t:'number'}
   ], v);
 }
 function editAcc(id) {
