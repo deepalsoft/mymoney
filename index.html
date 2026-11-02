@@ -28,7 +28,7 @@
     InvTx: ['ID','AssetID','Date','Type','Units','Price','Fees','Amount','Account','Note'],
     Prices: ['ID','AssetID','Date','Price']
   };
-  const VER = 'v4';
+  const VER = 'v6';
   const LS = window.localStorage;
   const cfg = () => ({ url: LS.getItem('mm_url') || '', key: LS.getItem('mm_key') || '' });
   const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -165,6 +165,17 @@
     delete photos[pid];
   }
 
+  /* ---- background refresh: download the sheet, update the screen only if something changed ---- */
+  async function pull() {
+    const fresh = await rpc('getAll', []);
+    if (queue.length) return;                              // newer local changes are waiting: keep them
+    const changed = JSON.stringify(fresh) !== JSON.stringify(data);
+    data = fresh; await persist();
+    if (changed) window.dispatchEvent(new Event('mm-synced'));
+  }
+  let pulling = false;
+  const pullSoon = () => { if (pulling || syncing || !navigator.onLine || !cfg().url) return; pulling = true; pull().catch(() => {}).finally(() => { pulling = false; status(); }); };
+
   /* ---- sync the waiting changes ---- */
   const swap = (obj, map) => { let s = JSON.stringify(obj); Object.keys(map).forEach(k => { s = s.split(k).join(map[k]); }); return JSON.parse(s); };
   async function sync(manual) {
@@ -194,9 +205,7 @@
           failed.push({ fn: item.fn, error: e.message }); queue.shift(); await persist();
         }
       }
-      data = await rpc('getAll', []);         // server copy is the truth once everything is sent
-      await persist();
-      window.dispatchEvent(new Event('mm-synced'));
+      await pull();                           // server copy is the truth once everything is sent
     } catch (e) {
       if (e.unauth) { LS.setItem('mm_key', ''); syncing = false; status(); if (await setup('Access key was rejected. Enter it again.')) sync(true); return; }
     } finally { syncing = false; status(); }
@@ -206,6 +215,7 @@
   const impl = {
     async getAll() {
       if (!cfg().url) { await setup('First time: paste the URL of your Apps Script Web App and your access key.'); }
+      if (data) { pullSoon(); status(); return clone(data); }      // instant start from the copy on the phone
       if (queue.length) await sync();
       if (!queue.length) {
         try { data = await rpc('getAll', []); await persist(); status(); return clone(data); }
@@ -241,14 +251,8 @@
       if (!data) throw new Error('No saved data yet. Open the app once with internet first.');
       const before = clone(data);
       L[fn](...args);                                    // 1) change the local copy right away
-      if (!queue.length) {                               // 2) online and nothing waiting: send now
-        try { data = await rpc(fn, args); await persist(); status(); return clone(data); }
-        catch (e) {
-          if (!e.net) { data = before; await persist(); throw e; }
-        }
-      }
-      queue.push({ fn, args }); await persist(); status();   // 3) otherwise wait in the queue
-      sync();
+      queue.push({ fn, args }); persist(); status();         // 2) wait in the queue (saved to the phone in the background) ...
+      sync();                                                // 3) ... and send in the background (no waiting on the screen)
       return clone(data);
     };
   });
@@ -278,7 +282,7 @@
   setInterval(() => { if (queue.length) sync(); }, 30000);
   window.addEventListener('mm-synced', () => {
     if (typeof M !== 'undefined' && M) return;          // do not disturb an open form
-    if (typeof call === 'function') call('getAll');
+    if (typeof setData === 'function' && typeof render === 'function') { setData(clone(data)); render(); }
   });
   ready.then(status);
 })();
