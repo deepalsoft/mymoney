@@ -28,7 +28,7 @@
     InvTx: ['ID','AssetID','Date','Type','Units','Price','Fees','Amount','Account','Note'],
     Prices: ['ID','AssetID','Date','Price']
   };
-  const VER = 'v3';
+  const VER = 'v4';
   const LS = window.localStorage;
   const cfg = () => ({ url: LS.getItem('mm_url') || '', key: LS.getItem('mm_key') || '' });
   const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -218,7 +218,7 @@
           }
         }
       }
-      if (!data) throw new Error('No saved data yet. Open the app once with internet to download your data.');
+      if (!data) throw new Error('[app ' + VER + '] No saved data yet. Open the app once with internet to download your data.');
       status(); return clone(data);
     },
     async uploadPhoto(url, name) {
