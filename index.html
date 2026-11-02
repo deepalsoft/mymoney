@@ -93,11 +93,16 @@
     if (!c.url) { const e = new Error('Not configured'); e.net = true; throw e; }
     if (!navigator.onLine) { const e = new Error('Offline'); e.net = true; throw e; }
     const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), fn === 'uploadPhoto' ? 60000 : 20000);
-    let j;
+    let j, r;
     try {
-      const r = await fetch(c.url, { method: 'POST', body: JSON.stringify({ key: c.key, fn, args }), signal: ctl.signal, redirect: 'follow' });
-      j = await r.json();
-    } catch (x) { const e = new Error('Network'); e.net = true; throw e; } finally { clearTimeout(to); }
+      r = await fetch(c.url, { method: 'POST', body: JSON.stringify({ key: c.key, fn, args }), signal: ctl.signal, redirect: 'follow' });
+    } catch (x) {
+      const e = new Error('Could not reach the Web App. Check the URL, your internet, and that "Who has access" is set to Anyone.'); e.net = true; e.detail = e.message; throw e;
+    } finally { clearTimeout(to); }
+    try { j = await r.json(); }
+    catch (x) {
+      const e = new Error('The Web App answered but not with data (HTTP ' + r.status + '). Use the URL ending in /exec, set "Who has access" to Anyone, and deploy a New version.'); e.net = true; e.detail = e.message; throw e;
+    }
     if (!j.ok) {
       const e = new Error(j.error || 'Server error'); e.app = true;
       if (j.error === 'Unauthorized') e.unauth = true;
@@ -203,6 +208,10 @@
         catch (e) {
           if (e.unauth) { LS.setItem('mm_key', ''); await setup('Access key was rejected. Enter it again.'); return impl.getAll(); }
           if (!e.net) throw e;
+          if (!data) {                                   // nothing saved yet and the server cannot be reached: say why
+            if (await setup(e.message + ' Fix the URL/key below, or Cancel.')) return impl.getAll();
+            throw new Error(e.message);
+          }
         }
       }
       if (!data) throw new Error('No saved data yet. Open the app once with internet to download your data.');
