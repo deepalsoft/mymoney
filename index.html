@@ -21,14 +21,15 @@
     Goals: ['ID','Name','Target','Saved','TargetDate','Account'],
     Settings: ['ID','Value'],
     Rates: ['ID','Date','Buy','Sell'],
-    Loans: ['ID','Person','Direction','Amount','Date','DueDate','Account','Note'],
+    Loans: ['ID','Person','Direction','Amount','Date','DueDate','Account','Note','Rate','Installment','Freq','FirstInst'],
     LoanPayments: ['ID','LoanID','Date','Amount','Account','Note'],
     AccBudgets: ['ID','Category','Account','Amount','DueDay'],
     Assets: ['ID','Kind','Name','Code'],
     InvTx: ['ID','AssetID','Date','Type','Units','Price','Fees','Amount','Account','Note'],
-    Prices: ['ID','AssetID','Date','Price']
+    Prices: ['ID','AssetID','Date','Price'],
+    FDs: ['ID','Name','Principal','Rate','StartDate','TermMonths','Payout','Account','Note','Closed']
   };
-  const VER = 'v10';
+  const VER = 'v11';
   const LS = window.localStorage;
   const cfg = () => ({ url: LS.getItem('mm_url') || '', key: LS.getItem('mm_key') || '' });
   const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -116,7 +117,7 @@
   }
 
   /* ---- the same logic as Code.gs, applied to the local copy ---- */
-  const T = () => data;
+  const T = () => { Object.keys(H).forEach(k => { if (!data[k]) data[k] = []; }); return data; };
   const upsert = (name, o) => {
     const row = {}; H[name].forEach(k => row[k] = (o[k] === undefined || o[k] === null) ? '' : o[k]);
     const i = T()[name].findIndex(r => r.ID === row.ID);
@@ -288,6 +289,116 @@
   ready.then(status);
 })();
 
+
+/* ===== App lock: PIN + Face ID / Touch ID (this phone only) ===== */
+(function () {
+  const LS = window.localStorage;
+  const get = () => { try { return JSON.parse(LS.getItem('mm_lock') || 'null'); } catch (e) { return null; } };
+  const put = o => o ? LS.setItem('mm_lock', JSON.stringify(o)) : LS.removeItem('mm_lock');
+  const hex = b => Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2, '0')).join('');
+  const b64 = b => btoa(String.fromCharCode.apply(null, new Uint8Array(b))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const unb64 = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+  const rnd = n => crypto.getRandomValues(new Uint8Array(n));
+  const sha = async (salt, pin) => hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(salt + ':' + pin)));
+  const canBio = () => !!(window.PublicKeyCredential && navigator.credentials);
+  let locked = false, hiddenAt = 0, fails = 0, until = 0, pin = '';
+
+  const st = document.createElement('style');
+  st.textContent = 'html.mml body>*:not(#mmlock):not(#mmset){visibility:hidden!important}' +
+    '#mmlock,#mmset{position:fixed;inset:0;font-family:system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center}' +
+    '#mmlock{z-index:500;background:linear-gradient(160deg,#0f766e,#134e4a);color:#fff}#mmset{z-index:400;background:rgba(0,0,0,.55);padding:20px}' +
+    '#mmlock h2{margin:0 0 4px;font-size:22px}#mmlock .msg{height:20px;font-size:13px;opacity:.85;margin:6px 0 14px}' +
+    '#mmlock .pd{display:flex;gap:14px;margin:8px 0 6px}#mmlock .pd i{width:14px;height:14px;border-radius:50%;border:2px solid #fff}#mmlock .pd i.f{background:#fff}' +
+    '#mmlock .kp{display:grid;grid-template-columns:repeat(3,76px);gap:14px;margin-top:6px}#mmlock .kp button{height:76px;border-radius:50%;border:0;background:rgba(255,255,255,.16);color:#fff;font-size:28px}' +
+    '#mmlock .kp button:active{background:rgba(255,255,255,.35)}#mmlock .bio{margin-top:18px;background:none;border:1px solid rgba(255,255,255,.5);color:#fff;border-radius:99px;padding:9px 20px;font-size:15px}' +
+    '@keyframes mmshake{20%,60%{transform:translateX(-9px)}40%,80%{transform:translateX(9px)}}#mmlock .pd.bad{animation:mmshake .35s}' +
+    '#mmset .box{background:#fff;color:#16302b;border-radius:16px;padding:18px;max-width:380px;width:100%;max-height:90vh;overflow:auto}' +
+    '#mmset input,#mmset select{width:100%;box-sizing:border-box;padding:11px;margin:4px 0 10px;border:1px solid #cbd5d1;border-radius:8px;font-size:16px}' +
+    '#mmset button{width:100%;padding:12px;border:0;border-radius:10px;background:#0f766e;color:#fff;font-size:16px;margin-top:6px}#mmset button.g{background:#e6efed;color:#16302b}#mmset button.r{background:#b91c1c}';
+  document.head.appendChild(st);
+  if (get()) document.documentElement.classList.add('mml');
+
+  async function bio() {
+    const L = get(); if (!L || !L.cred) return false;
+    try {
+      await navigator.credentials.get({ publicKey: { challenge: rnd(32), allowCredentials: [{ type: 'public-key', id: unb64(L.cred) }], userVerification: 'required', timeout: 60000 } });
+      return true;
+    } catch (e) { return false; }
+  }
+  function dots() { const d = document.querySelector('#mmlock .pd'); if (d) d.innerHTML = Array.from({ length: (get() || {}).len || 4 }, (_, i) => '<i class="' + (i < pin.length ? 'f' : '') + '"></i>').join(''); }
+  function show() {
+    const L = get(); if (!L) return;
+    locked = true; pin = ''; document.documentElement.classList.add('mml');
+    let o = document.getElementById('mmlock'); if (o) o.remove();
+    o = document.createElement('div'); o.id = 'mmlock';
+    o.innerHTML = '<h2>🔒 My Money</h2><div class="msg" id="mmmsg2">Enter your PIN</div><div class="pd"></div><div class="kp">' +
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, '', 0, '⌫'].map(k => k === '' ? '<span></span>' : '<button data-k="' + k + '">' + k + '</button>').join('') + '</div>' +
+      (L.cred ? '<button class="bio" id="mmbio">Use Face ID</button>' : '');
+    document.body.appendChild(o); dots();
+    o.querySelectorAll('.kp button').forEach(b => b.onclick = () => key(b.dataset.k));
+    const bb = document.getElementById('mmbio'); if (bb) bb.onclick = async () => { if (await bio()) unlock(); else msg('Face ID failed. Use your PIN.'); };
+    if (L.cred) bio().then(ok => { if (ok) unlock(); });
+  }
+  const msg = t => { const m = document.getElementById('mmmsg2'); if (m) m.textContent = t; };
+  function unlock() { locked = false; fails = 0; const o = document.getElementById('mmlock'); if (o) o.remove(); document.documentElement.classList.remove('mml'); }
+  async function key(k) {
+    const L = get(); if (!L) return unlock();
+    if (Date.now() < until) { msg('Too many tries. Wait ' + Math.ceil((until - Date.now()) / 1000) + 's'); return; }
+    if (k === '⌫') pin = pin.slice(0, -1); else if (pin.length < L.len) pin += k;
+    dots();
+    if (pin.length === L.len) {
+      if (await sha(L.salt, pin) === L.hash) { unlock(); return; }
+      fails++; pin = ''; const d = document.querySelector('#mmlock .pd'); d.classList.add('bad'); setTimeout(() => { d.classList.remove('bad'); dots(); }, 400);
+      if (fails >= 5) { until = Date.now() + 30000; fails = 0; msg('Too many tries. Wait 30s'); } else msg('Wrong PIN');
+    }
+  }
+  document.addEventListener('DOMContentLoaded', () => { if (get()) show(); });
+  document.addEventListener('visibilitychange', () => {
+    const L = get(); if (!L) return;
+    if (document.hidden) { hiddenAt = Date.now(); return; }
+    if (!locked && Date.now() - hiddenAt >= (L.auto || 0) * 1000) show();
+  });
+
+  /* ---- settings ---- */
+  window.mmLockSettings = () => {
+    const L = get(), w = document.createElement('div'); w.id = 'mmset';
+    const close = () => w.remove(), val = id => w.querySelector('#' + id).value.trim();
+    const err = t => { w.querySelector('#mmerr').textContent = t; };
+    const okPin = p => /^\d{4,6}$/.test(p);
+    const setPin = async p => { const salt = Array.from(rnd(8)).join(''); return { salt, hash: await sha(salt, p), len: p.length }; };
+    w.innerHTML = '<div class="box"><h3 style="margin:0 0 6px">🔒 App lock</h3><div id="mmerr" style="color:#b91c1c;font-size:13px;min-height:16px"></div>' + (L ? `
+      <label>Ask for PIN after leaving the app</label><select id="mmauto">${[[0, 'Immediately'], [60, 'After 1 minute'], [300, 'After 5 minutes'], [900, 'After 15 minutes']].map(o => `<option value="${o[0]}" ${(L.auto || 0) === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>
+      ${canBio() ? `<button class="g" id="mmbio2">${L.cred ? 'Turn off Face ID' : 'Turn on Face ID / Touch ID'}</button>` : ''}
+      <label style="display:block;margin-top:12px">Current PIN (needed to change or turn off)</label><input id="mmcur" type="password" inputmode="numeric" maxlength="6">
+      <label>New PIN (4–6 digits, optional)</label><input id="mmnew" type="password" inputmode="numeric" maxlength="6">
+      <button id="mmsave">Save</button><button class="r" id="mmoff">Turn off app lock</button>` : `
+      <div style="font-size:13px;color:#51706a;margin-bottom:8px">Choose a PIN. You can add Face ID afterwards.</div>
+      <label>PIN (4–6 digits)</label><input id="mmnew" type="password" inputmode="numeric" maxlength="6"><label>Repeat PIN</label><input id="mmnew2" type="password" inputmode="numeric" maxlength="6">
+      <button id="mmon">Turn on app lock</button>`) + '<button class="g" id="mmx">Close</button><div style="font-size:12px;color:#6b7f7a;margin-top:10px">This locks the screen of this app on this phone. Your data is not encrypted.</div></div>';
+    document.body.appendChild(w);
+    w.querySelector('#mmx').onclick = close;
+    if (!L) { w.querySelector('#mmon').onclick = async () => { const p = val('mmnew'); if (!okPin(p)) return err('PIN must be 4–6 digits'); if (p !== val('mmnew2')) return err('PINs do not match'); put(await setPin(p)); close(); mmLockSettings(); }; return; }
+    const check = async () => (await sha(L.salt, val('mmcur'))) === L.hash;
+    w.querySelector('#mmauto').onchange = e => { const c = get(); c.auto = +e.target.value; put(c); };
+    const b = w.querySelector('#mmbio2');
+    if (b) b.onclick = async () => {
+      const c = get();
+      if (c.cred) { delete c.cred; put(c); close(); mmLockSettings(); return; }
+      try {
+        const cr = await navigator.credentials.create({ publicKey: { challenge: rnd(32), rp: { name: 'My Money', id: location.hostname }, user: { id: rnd(16), name: 'me', displayName: 'Me' },
+          pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }], authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'preferred' }, timeout: 60000 } });
+        c.cred = b64(cr.rawId); put(c); close(); mmLockSettings();
+      } catch (e) { err('Face ID could not be turned on on this device.'); }
+    };
+    w.querySelector('#mmsave').onclick = async () => {
+      if (!val('mmnew')) { close(); return; }
+      if (!(await check())) return err('Current PIN is wrong'); if (!okPin(val('mmnew'))) return err('New PIN must be 4–6 digits');
+      const c = Object.assign(get(), await setPin(val('mmnew'))); put(c); close();
+    };
+    w.querySelector('#mmoff').onclick = async () => { if (!(await check())) return err('Enter your current PIN to turn off'); put(null); document.documentElement.classList.remove('mml'); close(); };
+  };
+})();
+
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <style>
@@ -344,10 +455,35 @@ nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);b
 nav button{flex:1;background:none;border:0;color:var(--mute);padding:9px 0 7px;font-size:9px;white-space:nowrap;overflow:hidden}
 nav button span{display:block;font-size:18px}
 nav button{font-size:8.5px;min-width:0}
+.dots{display:flex;gap:5px;justify-content:center;margin:8px 0 0}
+.dots i{width:6px;height:6px;border-radius:50%;background:var(--track);transition:all .2s}
+.dots i.on{background:var(--acc);width:16px;border-radius:4px}
+.calcbar{display:flex;gap:6px;align-items:center;margin-top:6px}
+.calcbar button{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:8px;width:44px;height:34px;font-size:18px;padding:0}
+.calcout{margin-left:auto;font-weight:700;color:var(--acc)}
+/* animation (body[data-anim]) */
+@keyframes mm-fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes mm-inr{from{opacity:0;transform:translateX(34px)}to{opacity:1;transform:none}}
+@keyframes mm-inl{from{opacity:0;transform:translateX(-34px)}to{opacity:1;transform:none}}
+@keyframes mm-pop{0%{opacity:0;transform:translateY(16px) scale(.96)}70%{transform:translateY(-3px) scale(1.01)}100%{opacity:1;transform:none}}
+@keyframes mm-grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+body:not([data-anim="off"]) #app.in{animation:mm-fade .22s ease-out}
+body[data-anim="smooth"] #app.inr,body[data-anim="lively"] #app.inr{animation:mm-inr .28s ease-out}
+body[data-anim="smooth"] #app.inl,body[data-anim="lively"] #app.inl{animation:mm-inl .28s ease-out}
+body[data-anim="subtle"] #app.inr,body[data-anim="subtle"] #app.inl{animation:mm-fade .22s ease-out}
+body[data-anim="smooth"] .bar i,body[data-anim="lively"] .bar i{transform-origin:left;animation:mm-grow .6s ease-out}
+body[data-anim="lively"] #app.in>*,body[data-anim="lively"] #app.inr>*,body[data-anim="lively"] #app.inl>*{animation:mm-pop .45s cubic-bezier(.34,1.56,.64,1) both}
+body[data-anim="lively"] #app>*:nth-child(2){animation-delay:.04s}body[data-anim="lively"] #app>*:nth-child(3){animation-delay:.08s}
+body[data-anim="lively"] #app>*:nth-child(4){animation-delay:.12s}body[data-anim="lively"] #app>*:nth-child(5){animation-delay:.16s}
+body[data-anim="lively"] #app>*:nth-child(n+6){animation-delay:.2s}
+body:not([data-anim="off"]) .btn:active,body:not([data-anim="off"]) .card:active,body:not([data-anim="off"]) .item:active,body:not([data-anim="off"]) nav button:active{transform:scale(.97);transition:transform .08s}
+body[data-anim="lively"] nav button.on span{animation:mm-pop .4s cubic-bezier(.34,1.56,.64,1)}
 .ov-date{color:var(--mute);font-size:13px;margin:-8px 0 4px}
 .ov-sec{--c:#0f766e;--ct:rgba(15,118,110,.12)}
 .ov-sec .ov{border-top:3px solid var(--c)}
-.ov-sec .ov-h b{color:var(--c)}.ov-sec .ov-h b::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c);margin-right:7px}
+.ov-sec .ov-h b{color:var(--c)}.car{display:inline-block;font-style:normal;margin-right:7px;transition:transform .2s;font-size:12px}
+.ov-sec.col .car{transform:rotate(-90deg)}
+.ov-sec.col .ov-h{margin-bottom:0}
 .ov-sec .chip{background:var(--ct);color:var(--c)}
 .ov-sec .chip.bad{background:rgba(185,28,28,.13);color:var(--warn)}
 .ov-sec .chip.soon{background:rgba(202,138,4,.18);color:var(--soon)}
@@ -464,7 +600,7 @@ function setData(d) {
 function call(fn, ...args) {
   $('#load').style.display = 'block';
   google.script.run
-    .withSuccessHandler(d => { setData(d); if (!booted) { booted = true; tab = tabList()[0][0]; } $('#load').style.display = 'none'; render(); if (reopen) { const r = reopen; reopen = null; if (r.indexOf('asset:') === 0) showAsset(r.slice(6)); else if (r.indexOf('acctbud:') === 0) editAcctBudget(r.slice(8)); else showLoan(r); } })
+    .withSuccessHandler(d => { setData(d); if (!booted) { booted = true; tab = tabList()[0][0]; } $('#load').style.display = 'none'; render(); if (reopen) { const r = reopen; reopen = null; if (r.indexOf('asset:') === 0) showAsset(r.slice(6)); else if (r.indexOf('fd:') === 0) showFD(r.slice(3)); else if (r.indexOf('acctbud:') === 0) editAcctBudget(r.slice(8)); else showLoan(r); } })
     .withFailureHandler(e => { $('#load').style.display = 'none'; alert('Error: ' + e.message); })
     [fn](...args);
 }
@@ -551,10 +687,18 @@ function toggleTab(k) {
   const h = hiddenSet(); if (h.has(k)) h.delete(k); else h.add(k);
   setSet('HiddenTabs', Array.from(h).join(',')); render();
 }
+const animMode = () => getSet('Anim') || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches ? 'off' : 'subtle');
+let lastKey = '';
 function render() {
+  const key = tab + '|' + (sub || '') + '|' + (stmtAcc || '') + '|' + (homeAcct || '') + '|' + (budAcct || '');
+  const enter = key !== lastKey; lastKey = key;
+  document.body.dataset.anim = animMode();
   $('#nav').innerHTML = tabList().map(t => `<button class="${tab===t[0] || (t[0]==='more' && hiddenSet().has(tab)) ? 'on':''}" onclick="go('${t[0]}')"><span>${t[1]}</span>${t[2]}</button>`).join('');
   $('#fab').style.display = (tab === 'home' || tab === 'tx') ? 'block' : 'none';
   $('#app').innerHTML = ({home, ov, tx, ana, budget, acc, more})[tab]();
+  const a = $('#app'); a.classList.remove('in', 'inl', 'inr');
+  if (enter && animMode() !== 'off') { void a.offsetWidth; a.classList.add(slideDir > 0 ? 'inr' : slideDir < 0 ? 'inl' : 'in'); }
+  slideDir = 0;
 }
 function go(t) { tab = t; reorder = false; sub = null; stmtAcc = null; stmtFrom = null; moreEdit = false; render(); window.scrollTo(0, 0); }
 function shift(d) {
@@ -602,6 +746,28 @@ function pickAcct() {
 function setHomeAcct(i) { homeAcct = HOME_OPTS[i] || ''; closeM(); render(); }
 function makeDefault(i) { const n = HOME_OPTS[i] || ''; setSet('HomeAccount', n); homeAcct = n; closeM(); render(); }
 
+/* ---------- swipe: Home -> accounts, elsewhere -> tabs ---------- */
+let slideDir = 0;
+function swipeTab(dir) {
+  const l = tabList().map(t => t[0]), cur = l.indexOf(tab) >= 0 ? l.indexOf(tab) : l.indexOf('more'), n = cur + dir;
+  if (n < 0 || n >= l.length) return;
+  slideDir = dir; go(l[n]); window.scrollTo(0, 0);
+}
+function swipeAcct(dir) {
+  const o = [''].concat(homeList().map(x => x.Name)), n = o.indexOf(homeAcct) + dir;
+  if (n < 0 || n >= o.length) { swipeTab(dir); return; }
+  slideDir = dir; homeAcct = o[n]; render();
+}
+let sw = null;
+document.addEventListener('touchstart', e => { sw = e.touches.length === 1 ? {x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now(), el: e.target} : null; }, {passive: true});
+document.addEventListener('touchend', e => {
+  if (!sw) return; const s0 = sw; sw = null;
+  const t = e.changedTouches[0], dx = t.clientX - s0.x, dy = t.clientY - s0.y;
+  if (Math.abs(dx) < 70 || Math.abs(dy) > Math.abs(dx) * 0.6 || Date.now() - s0.t > 800 || s0.x < 24) return;
+  if ($('#sheet').style.display === 'block' || (typeof DR !== 'undefined' && DR)) return;
+  if (s0.el.closest && s0.el.closest('input,select,textarea,.grip,.seg,#sheet,#bd,nav,.dr')) return;
+  if (tab === 'home' && !sub && s0.el.closest('.swipe-acct')) swipeAcct(dx < 0 ? 1 : -1); else swipeTab(dx < 0 ? 1 : -1);
+});
 function toggleHome(id) { homeOpen = homeOpen === id ? null : id; render(); }
 function home() {
   if (homeAcct === null) homeAcct = defAcct();
@@ -638,10 +804,12 @@ function home() {
   const open = D.Loans.filter(l => outstanding(l) > 0.005 && (!names || names.has(l.Account)));
   const rec = sum(open.filter(l => l.Direction === 'Lent'), outstanding), owe = sum(open.filter(l => l.Direction === 'Borrowed'), outstanding);
   const goLoans = "tab='more';sub='loans';render();window.scrollTo(0,0)";
+  const opts = [''].concat(homeList().map(x => x.Name)), at = Math.max(0, opts.indexOf(homeAcct));
   return `${monthBar()}
-  <div class="card tight">
+  <div class="card tight swipe-acct">
     <div class="row"><span class="mute">Left this month</span><span class="pill" onclick="pickAcct()">${a && a.Name === defAcct() ? '★ ' : ''}${esc(a ? a.Name : 'All accounts')} ▾</span></div>
     <div class="big ${inc - exp < 0 ? 'warn' : ''}" style="font-size:26px">${fmt(inc - exp)}</div>
+    ${opts.length > 1 ? `<div class="dots">${opts.map((_, i) => `<i class="${i === at ? 'on' : ''}"></i>`).join('')}</div>` : ''}
     <div class="stats">
       <div><span class="mute">Income</span><b class="inc">${n0(inc)}</b></div>
       <div><span class="mute">Spent</span><b class="exp">${n0(exp)}</b></div>
@@ -935,9 +1103,13 @@ const chipFor = n => `<span class="chip ${n < 0 ? 'bad' : n <= 3 ? 'soon' : ''}"
 const shortDate = d => d.toLocaleString(undefined, {day: 'numeric', month: 'short'});
 const openLoan = id => { tab = 'more'; sub = 'loans'; reorder = false; render(); window.scrollTo(0, 0); showLoan(id); };
 const openAsset = id => { const a = D.Assets.find(x => x.ID === id); tab = 'more'; sub = 'inv'; invKind = a ? a.Kind : invKind; reorder = false; render(); window.scrollTo(0, 0); showAsset(id); };
+const openFD = id => { tab = 'more'; sub = 'inv'; invKind = 'FD'; reorder = false; render(); window.scrollTo(0, 0); showFD(id); };
 const openSub = k => { tab = 'more'; sub = k; reorder = false; render(); window.scrollTo(0, 0); };
 const ovHead = (t, right) => `<div class="ov-h"><b>${t}</b><span>${right || ''}</span></div>`;
-const ovSec = (c, ct, html) => `<div class="ov-sec" style="--c:${c};--ct:${ct}">${html}</div>`;
+const ovCol = () => new Set(String(getSet('OvCollapsed') || '').split(',').filter(Boolean));
+function toggleOv(k) { const c = ovCol(); if (c.has(k)) c.delete(k); else c.add(k); setSet('OvCollapsed', Array.from(c).join(',')); render(); }
+const ovSec = (k, c, ct, title, right, html) => { const off = ovCol().has(k);
+  return `<div class="ov-sec ${off ? 'col' : ''}" style="--c:${c};--ct:${ct}"><div class="ov-h" onclick="toggleOv('${k}')" style="cursor:pointer"><b><i class="car">▾</i>${title}</b><span>${right || ''}</span></div>${off ? '' : html}</div>`; };
 
 function billsDue() {                                      // account budgets that have a due day
   const n = new Date(), ym = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0');
@@ -972,9 +1144,10 @@ function ov() {
 
   // loans
   const act = D.Loans.filter(l => outstanding(l) > 0.005);
-  const byDue = (a, b) => (a.DueDate || '9999') < (b.DueDate || '9999') ? -1 : 1;
-  const loanRow = l => { const d = parseD(l.DueDate);
-    return `<div class="ov-r" onclick="openLoan('${l.ID}')" style="cursor:pointer"><div class="l"><b>${esc(l.Person)}</b><small>${d ? 'Due ' + shortDate(d) : 'No due date'}</small></div>
+  const dueKey = l => { const n = loanNext(l); return n ? n.date.getTime() : 9e15; };
+  const byDue = (a, b) => dueKey(a) - dueKey(b);
+  const loanRow = l => { const nx = loanNext(l), d = nx && nx.date;
+    return `<div class="ov-r" onclick="openLoan('${l.ID}')" style="cursor:pointer"><div class="l"><b>${esc(l.Person)}</b><small>${nx ? (nx.inst ? 'Installment ' + fmt(nx.amt) + ' · ' : 'Due ') + shortDate(d) : 'No due date'}${+l.Rate > 0 ? ' · ' + n2(l.Rate) + '%' : ''}</small></div>
       <div class="rt"><b>${fmt(outstanding(l))}</b>${d ? '<br>' + chipFor(daysTo(d)) : ''}</div></div>`; };
   const lent = act.filter(l => l.Direction === 'Lent').sort(byDue), owe = act.filter(l => l.Direction === 'Borrowed').sort(byDue);
   const loanBlock = (title, list, cls) => list.length ? `<div class="ov-sub"><span>${title}</span><b class="${cls}">${fmt(sum(list, outstanding))}</b></div>${list.map(loanRow).join('')}` : '';
@@ -993,16 +1166,21 @@ function ov() {
   const invRow = r => `<div class="ov-r" onclick="openAsset('${r.a.ID}')" style="cursor:pointer"><div class="l"><b>${esc(r.a.Name)}</b><small>${fmtU(r.c.units)} ${r.a.Kind === 'Share' ? 'shares' : 'units'}${r.a.Code ? ' · ' + esc(r.a.Code) : ''}</small></div>
     <div class="rt"><b>${fmt(r.c.value)}</b><br><small class="${pl(r.c.unreal)}">${sgn(r.c.unreal)} · ${r.c.pct.toFixed(1)}%</small></div></div>`;
   const invBlock = (title, k) => k.rs.length ? `<div class="ov-sub"><span>${title}</span><b class="${pl(k.v - k.cst)}">${fmt(k.v)} · ${k.pct >= 0 ? '+' : ''}${k.pct.toFixed(1)}%</b></div>${k.rs.map(invRow).join('')}` : '';
-  const invHtml = held.length ? `<div class="ov">${invBlock('Unit trusts', ut)}${invBlock('Shares', sh)}</div>` : `<div class="ov"><div class="ov-hint">No investments held yet.</div></div>`;
-  const invTotal = ut.v + sh.v;
+  const fdOpen = fds().filter(f => f.Closed !== 'Closed'), fdc = fdOpen.map(f => ({f, c: fdCalc(f)}));
+  const fdV = sum(fdc, r => r.c.value);
+  const fdRow = r => `<div class="ov-r" onclick="openFD('${r.f.ID}')" style="cursor:pointer"><div class="l"><b>${esc(r.f.Name)}</b><small>${n2(r.f.Rate)}% · ${r.c.mat ? (r.c.matured ? 'matured' : 'matures ' + shortDate(r.c.mat)) : esc(r.f.Payout || '')}</small></div>
+    <div class="rt"><b>${fmt(r.c.value)}</b><br><small class="inc">+${n0(r.c.earned)} interest</small></div></div>`;
+  const fdBlock = fdc.length ? `<div class="ov-sub"><span>Fixed deposits</span><b class="inc">${fmt(fdV)}</b></div>${fdc.map(fdRow).join('')}` : '';
+  const invTotal = ut.v + sh.v + fdV;
+  const invHtml = (held.length || fdc.length) ? `<div class="ov">${invBlock('Unit trusts', ut)}${invBlock('Shares', sh)}${fdBlock}</div>` : `<div class="ov"><div class="ov-hint">No investments held yet.</div></div>`;
 
   const dt = new Date().toLocaleDateString(undefined, {weekday: 'long', day: 'numeric', month: 'long'});
   return `<h1>Overview</h1><div class="ov-date">${dt}</div>
-  ${ovSec('#ea580c', 'rgba(234,88,12,.13)', ovHead('Due', open.length ? fmt(dueTotal) + ' to pay' : bills.length ? 'All paid ✓' : '') + billsHtml)}
-  ${ovSec('#0d9488', 'rgba(13,148,136,.13)', ovHead('Savings', fmt(savTotal)) + savHtml)}
-  ${ovSec('#2563eb', 'rgba(37,99,235,.13)', ovHead('Loans', act.length ? 'Net ' + sgn(sum(lent, outstanding) - sum(owe, outstanding)) : '') + loansHtml)}
-  ${ovSec('#c026d3', 'rgba(192,38,211,.13)', ovHead('Goals', D.Goals.length ? D.Goals.length + (D.Goals.length === 1 ? ' goal' : ' goals') : '') + goalsHtml)}
-  ${ovSec('#4f46e5', 'rgba(79,70,229,.13)', ovHead('Investments', held.length ? fmt(invTotal) : '') + invHtml)}`;
+  ${ovSec('due', '#ea580c', 'rgba(234,88,12,.13)', 'Due', open.length ? fmt(dueTotal) + ' to pay' : bills.length ? 'All paid ✓' : '', billsHtml)}
+  ${ovSec('sav', '#0d9488', 'rgba(13,148,136,.13)', 'Savings', fmt(savTotal), savHtml)}
+  ${ovSec('loan', '#2563eb', 'rgba(37,99,235,.13)', 'Loans', act.length ? 'Net ' + sgn(sum(lent, outstanding) - sum(owe, outstanding)) : '', loansHtml)}
+  ${ovSec('goal', '#c026d3', 'rgba(192,38,211,.13)', 'Goals', D.Goals.length ? D.Goals.length + (D.Goals.length === 1 ? ' goal' : ' goals') : '', goalsHtml)}
+  ${ovSec('inv', '#4f46e5', 'rgba(79,70,229,.13)', 'Investments', (held.length || fdc.length) ? fmt(invTotal) : '', invHtml)}`;
 }
 
 function goals() {
@@ -1026,18 +1204,25 @@ function goals() {
 }
 
 /* ----- More menu ----- */
+function animScreen() {
+  const m = animMode(), opt = (k, name, d) => `<div class="card row" onclick="setSet('Anim','${k}');render()"><div><b>${name}</b><div class="mute">${d}</div></div><span class="${m === k ? 'inc' : 'mute'}">${m === k ? '✓' : ''}</span></div>`;
+  return `<div class="back" onclick="sub=null;render()">‹ More</div><h1>Animation</h1>
+  ${opt('off', 'Off', 'No motion at all')}${opt('subtle', 'Subtle', 'Soft fade when a screen opens')}${opt('smooth', 'Smooth', 'Screens slide in the direction you swipe, bars fill')}${opt('lively', 'Lively', 'Bouncy slide, items pop in one by one')}
+  <div class="mute" style="margin-top:8px">Tip: swipe left or right on any screen to change tab. On Home, swipe the top card to change account.</div>`;
+}
 function more() {
   if (sub === 'goals') return goals();
   if (sub === 'loans') return loans();
   if (sub === 'inv') return inv();
   if (sub === 'tabs') return tabsScreen();
+  if (sub === 'anim') return animScreen();
   const act = D.Loans.filter(l => outstanding(l) > 0.005);
   const lent = sum(act.filter(l => l.Direction === 'Lent'), outstanding), owe = sum(act.filter(l => l.Direction === 'Borrowed'), outstanding);
   const tile = (key, ic, name, line) => `<div class="card row" onclick="sub='${key}';render();window.scrollTo(0,0)"><div><b>${ic} ${name}</b><div class="mute">${line}</div></div><span class="mute">›</span></div>`;
   const items = {
     goals: ['⭐', 'Goals', D.Goals.length + (D.Goals.length === 1 ? ' goal' : ' goals')],
     loans: ['🤝', 'Loans', `Owed to you ${fmt(lent)} · You owe ${fmt(owe)}`],
-    inv: ['📈', 'Investments', `Unit trusts ${short(sum(D.Assets.filter(a => a.Kind === 'Unit Trust'), a => calc(a).value))} · Shares ${short(sum(D.Assets.filter(a => a.Kind === 'Share'), a => calc(a).value))}`]
+    inv: ['📈', 'Investments', `Unit trusts ${short(sum(D.Assets.filter(a => a.Kind === 'Unit Trust'), a => calc(a).value))} · Shares ${short(sum(D.Assets.filter(a => a.Kind === 'Share'), a => calc(a).value))} · FD ${short(sum(fds().filter(f => f.Closed !== 'Closed'), f => fdCalc(f).value))}`]
   };
   const known = Object.keys(items);
   const ord = Array.from(new Set(String(getSet('MoreOrder') || '').split(',').filter(k => known.indexOf(k) >= 0).concat(known)));
@@ -1047,7 +1232,9 @@ function more() {
   return `<div class="row"><h1>More</h1><span class="lnk" onclick="moreEdit=!moreEdit;render()">${moreEdit ? 'Done' : '↕ Reorder'}</span></div>
   <div>${tiles}</div>
   ${tile('tabs', '↕', 'Tabs', 'Choose and reorder the bottom tabs')}
+  ${tile('anim', '✨', 'Animation', {off: 'Off', subtle: 'Subtle', smooth: 'Smooth', lively: 'Lively'}[animMode()])}
   ${allTabs().filter(t => hiddenSet().has(t[0])).map(t => `<div class="card row" onclick="go('${t[0]}')"><div><b>${t[1]} ${t[2]}</b></div><span class="mute">›</span></div>`).join('')}
+  <div class="card row" onclick="mmLockSettings()"><div><b>🔒 App lock</b><div class="mute">PIN and Face ID</div></div><span class="mute">›</span></div>
   <div class="card row" onclick="mmSettings()"><div><b>☁ Sync settings</b><div class="mute">Web App URL and access key. Tap to sync now.</div></div><span class="mute">›</span></div>`;
 }
 function tabsScreen() {
@@ -1087,6 +1274,21 @@ function loans() {
   ${showSettled ? done.map(card).join('') : ''}
   <button class="btn" onclick="editLoan()" style="margin-top:8px">Add loan</button>`;
 }
+const loanNext = l => {                                     // next installment (or the due date when there are none)
+  const o = outstanding(l); if (o <= 0.005) return null;
+  const ins = +l.Installment || 0, f = parseD(l.FirstInst);
+  if (ins > 0 && f) {
+    const k = Math.floor(paid(l) / ins + 1e-9);
+    const d = l.Freq === 'Weekly' ? new Date(f.getFullYear(), f.getMonth(), f.getDate() + 7 * k) : addMonths(f, k);
+    return {date: d, amt: Math.min(ins, o), inst: true};
+  }
+  const d = parseD(l.DueDate); return d ? {date: d, amt: o, inst: false} : null;
+};
+const loanInterest = l => {                                 // estimated interest since the last payment (or the loan date)
+  const r = (+l.Rate || 0) / 100, o = outstanding(l); if (r <= 0 || o <= 0.005) return 0;
+  const ps = D.LoanPayments.filter(p => p.LoanID === l.ID).sort(byDateAsc), last = ps.length ? ps[ps.length - 1].Date : l.Date, d0 = parseD(last);
+  return d0 ? o * r * Math.max(0, Math.round((midnight(new Date()) - midnight(d0)) / 864e5)) / 365 : 0;
+};
 function showLoan(id) {
   const l = loanById(id); if (!l) return;
   M = null;
@@ -1096,6 +1298,9 @@ function showLoan(id) {
     <div class="kpi"><div><span>Original</span><b>${fmt(l.Amount)}</b></div><div><span>Outstanding</span><b>${fmt(o)}</b></div>
     <div><span>Date</span><b>${esc(l.Date)}</b></div><div><span>Due</span><b>${esc(l.DueDate || '–')}</b></div></div>
     ${l.Account ? `<div class="mute" style="margin-top:8px">Account: ${esc(l.Account)}</div>` : ''}
+    ${(+l.Rate > 0) ? `<div class="row" style="margin-top:8px"><span class="mute">Interest ${n2(l.Rate)}% p.a. · est. since last payment</span><b>${fmt(loanInterest(l))}</b></div>
+      <div class="row" style="margin-top:2px"><span class="mute">Outstanding + interest (est.)</span><b>${fmt(o + loanInterest(l))}</b></div>` : ''}
+    ${loanNext(l) && loanNext(l).inst ? `<div class="row" style="margin-top:8px"><span class="mute">Next installment · ${l.Freq === 'Weekly' ? 'weekly' : 'monthly'}</span><b>${fmt(loanNext(l).amt)} · ${shortDate(loanNext(l).date)} · ${when(daysTo(loanNext(l).date))}</b></div>` : ''}
     ${l.Note ? `<div class="mute" style="margin-top:4px">${esc(l.Note)}</div>` : ''}
     <h2 style="margin-top:14px">${l.Direction === 'Lent' ? 'Received' : 'Paid back'}</h2>
     ${ps.length ? ps.map(p => `<div class="item row" onclick="editPay('${p.ID}')"><span>${esc(p.Date)}${p.Note ? ' · ' + esc(p.Note) : ''}</span><b>${fmt(p.Amount)}</b></div>`).join('') : '<div class="mute">Nothing yet</div>'}
@@ -1114,8 +1319,12 @@ function editLoan(id) {
     {k:'Date', l:'Date', t:'date', req:true},
     {k:'DueDate', l:'Due date (optional)', t:'date'},
     {k:'Account', l:"Account (none = don't change any balance)", t:'select', o:[''].concat(lkrAccs())},
+    {k:'Rate', l:'Interest rate % per year (optional)', t:'number'},
+    {k:'Installment', l:'Installment amount (optional)', t:'number'},
+    {k:'Freq', l:'Installment every', t:'select', o:['Monthly','Weekly']},
+    {k:'FirstInst', l:'First installment date (optional)', t:'date'},
     {k:'Note', l:'Note'}
-  ], v, {reopen: id, validate: o => (+o.Amount < paid(v) - 0.005) ? 'Amount is less than what has already been repaid' : ''});
+  ], v, {reopen: id, validate: o => (+o.Installment > 0 && !o.FirstInst) ? 'Enter the first installment date' : (+o.Amount < paid(v) - 0.005) ? 'Amount is less than what has already been repaid' : ''});
 }
 function editPay(id, loanId) {
   const p = id ? D.LoanPayments.find(x => x.ID === id) : null;
@@ -1168,13 +1377,78 @@ function spark(pts) {
   return `<svg viewBox="0 0 ${W} ${H + 12}" width="100%"><polyline points="${pts.map((p, i) => x(i).toFixed(1) + ',' + y(p.Price).toFixed(1)).join(' ')}" fill="none" stroke="var(--acc)" stroke-width="2"/>
     <text x="${px}" y="${H + 10}" font-size="10">${esc(pts[0].Date)}</text><text x="${W - px}" y="${H + 10}" text-anchor="end" font-size="10">${esc(pts[pts.length - 1].Date)}</text></svg>`;
 }
+
+/* ----- fixed deposits ----- */
+const fds = () => D.FDs || [];
+const addMonths = (d, n) => { const x = new Date(d.getFullYear(), d.getMonth() + n, 1); x.setDate(Math.min(d.getDate(), new Date(x.getFullYear(), x.getMonth() + 1, 0).getDate())); return x; };
+const monthsDone = (s, end) => { let m = 0; while (addMonths(s, m + 1) <= end) m++; return m; };
+function fdCalc(f) {                                       // simple interest, actual days / 365
+  const P = +f.Principal || 0, r = (+f.Rate || 0) / 100, s = parseD(f.StartDate);
+  if (!s) return {P, earned: 0, total: 0, paid: 0, value: P, mat: null, daysLeft: null, matured: false, perMonth: P * r / 12};
+  const term = +f.TermMonths || 0, mat = term ? addMonths(s, term) : null, t0 = midnight(new Date());
+  const end = mat && t0 > mat ? mat : t0, days = Math.max(0, Math.round((end - s) / 864e5));
+  const earned = P * r * days / 365, total = mat ? P * r * Math.round((mat - s) / 864e5) / 365 : 0;
+  const mdone = monthsDone(s, end);
+  const paid = f.Payout === 'Monthly' ? P * r / 12 * mdone : f.Payout === 'Annually' ? P * r * Math.floor(mdone / 12) : 0;
+  return {P, earned, total, paid, value: P + Math.max(0, earned - paid), mat, daysLeft: mat ? Math.round((mat - t0) / 864e5) : null, matured: !!mat && t0 >= mat, perMonth: P * r / 12};
+}
+function invFD() {
+  const open = fds().filter(f => f.Closed !== 'Closed'), closed = fds().filter(f => f.Closed === 'Closed');
+  const cs = open.map(fdCalc), P = sum(cs, c => c.P), earned = sum(cs, c => c.earned), val = sum(cs, c => c.value);
+  const card = f => { const c = fdCalc(f);
+    return `<div class="card tight" onclick="showFD('${f.ID}')"><div class="row"><b>${esc(f.Name)}</b><b>${fmt(c.value)}</b></div>
+      <div class="row mute"><span>${fmt(c.P)} @ ${n2(f.Rate)}% · ${esc(f.Payout || 'At maturity')}</span><span class="inc">+${n0(c.earned)}</span></div>
+      <div class="mute">${c.mat ? (c.matured ? 'Matured ' + shortDate(c.mat) : 'Matures ' + shortDate(c.mat) + ' · ' + when(c.daysLeft)) : 'No maturity date'}</div></div>`; };
+  return `<div class="back" onclick="sub=null;render()">‹ More</div><h1>Investments</h1>${invSeg()}
+  <div class="card"><div class="kpi"><div><span>Value</span><b>${fmt(val)}</b></div><div><span>Principal</span><b>${fmt(P)}</b></div>
+    <div><span>Interest earned</span><b class="inc">+${n0(earned)}</b></div><div><span>Deposits</span><b>${open.length}</b></div></div></div>
+  ${open.length ? open.map(card).join('') : '<div class="empty">No fixed deposits yet.</div>'}
+  ${closed.length ? `<h2>Closed</h2>${closed.map(f => `<div class="card tight" style="opacity:.7" onclick="showFD('${f.ID}')"><div class="row"><b>${esc(f.Name)}</b><span class="mute">${fmt(f.Principal)}</span></div></div>`).join('')}` : ''}
+  <button class="btn" onclick="editFD()" style="margin-top:8px">Add fixed deposit</button>`;
+}
+const invSeg = () => `<div class="seg"><button class="${invKind === 'Unit Trust' ? 'on' : ''}" onclick="invKind='Unit Trust';render()">Unit trusts</button>
+  <button class="${invKind === 'Share' ? 'on' : ''}" onclick="invKind='Share';render()">Shares</button>
+  <button class="${invKind === 'FD' ? 'on' : ''}" onclick="invKind='FD';render()">Fixed deposits</button></div>`;
+function showFD(id) {
+  const f = fds().find(x => x.ID === id); if (!f) return; M = null;
+  const c = fdCalc(f), pm = f.Payout === 'Monthly' ? 'monthly' : f.Payout === 'Annually' ? 'yearly' : '';
+  $('#sheet').innerHTML = `<h3>${esc(f.Name)}${f.Closed === 'Closed' ? ' · closed' : ''}</h3>
+    <div class="kpi"><div><span>Principal</span><b>${fmt(c.P)}</b></div><div><span>Rate</span><b>${n2(f.Rate)}% p.a.</b></div>
+    <div><span>Started</span><b>${esc(f.StartDate || '–')}</b></div><div><span>Matures</span><b>${c.mat ? shortDate(c.mat) : '–'}</b></div></div>
+    <div class="row" style="margin-top:10px"><span class="mute">Interest earned so far</span><b class="inc">+${fmt(c.earned)}</b></div>
+    ${c.paid > 0 ? `<div class="row" style="margin-top:4px"><span class="mute">Already paid out (${pm})</span><b>${fmt(c.paid)}</b></div>` : ''}
+    <div class="row" style="margin-top:4px"><span class="mute">Value now</span><b>${fmt(c.value)}</b></div>
+    ${c.mat ? `<div class="row" style="margin-top:4px"><span class="mute">Total interest at maturity</span><b>${fmt(c.total)}</b></div>
+    <div class="row" style="margin-top:4px"><span class="mute">${f.Payout && f.Payout !== 'At maturity' ? 'Principal returned' : 'Maturity value'}</span><b>${fmt(c.P + (f.Payout && f.Payout !== 'At maturity' ? 0 : c.total))}</b></div>
+    <div class="row" style="margin-top:4px"><span class="mute">Time left</span><b>${c.matured ? 'Matured' : when(c.daysLeft)}</b></div>` : ''}
+    ${f.Payout && f.Payout !== 'At maturity' ? `<div class="row" style="margin-top:4px"><span class="mute">Interest per month</span><b>${fmt(c.perMonth)}</b></div>` : ''}
+    ${f.Account ? `<div class="mute" style="margin-top:8px">Account: ${esc(f.Account)}</div>` : ''}${f.Note ? `<div class="mute" style="margin-top:4px">${esc(f.Note)}</div>` : ''}
+    <div class="mute" style="margin-top:8px;font-size:12px">Simple interest before tax, estimated on actual days. Your bank's figure may differ slightly.</div>
+    <div class="btns" style="margin-top:12px"><button class="btn ghost" onclick="editFD('${id}')">Edit</button><button class="btn ghost" onclick="closeM()">Close</button></div>`;
+  $('#bd').style.display = 'block'; $('#sheet').style.display = 'block';
+}
+function editFD(id) {
+  const v = id ? fds().find(x => x.ID === id) : {StartDate: today(), Payout: 'At maturity', TermMonths: 12};
+  openForm(id ? 'Edit fixed deposit' : 'New fixed deposit', 'FDs', [
+    {k:'Name', l:'Name (e.g. HNB FD)', req:true},
+    {k:'Principal', l:'Amount deposited (LKR)', t:'number', req:true},
+    {k:'Rate', l:'Interest rate (% per year)', t:'number', req:true},
+    {k:'StartDate', l:'Start date', t:'date', req:true},
+    {k:'TermMonths', l:'Period (months)', t:'number'},
+    {k:'Payout', l:'Interest is paid', t:'select', o:['At maturity','Monthly','Annually']},
+    {k:'Account', l:'Account (optional, for your reference)', t:'select', o:[''].concat(lkrAccs())},
+    {k:'Note', l:'Note'},
+    {k:'Closed', l:'Status', t:'select', o:['Open','Closed']}
+  ], v, {reopen: id ? 'fd:' + id : undefined});
+}
+
 function inv() {
+  if (invKind === 'FD') return invFD();
   const rows = D.Assets.filter(a => a.Kind === invKind).map(a => ({a, c: calc(a)}));
   const open = rows.filter(r => r.c.units > 1e-8), closed = rows.filter(r => r.c.units <= 1e-8);
   const T = k => sum(rows, r => r.c[k]);
   const value = T('value'), cost = T('cost'), unreal = value - cost, real = T('realized'), div = T('div');
-  const seg = `<div class="seg"><button class="${invKind === 'Unit Trust' ? 'on' : ''}" onclick="invKind='Unit Trust';render()">Unit trusts</button>
-    <button class="${invKind === 'Share' ? 'on' : ''}" onclick="invKind='Share';render()">Shares</button></div>`;
+  const seg = invSeg();
   const card = r => `<div class="card tight" onclick="showAsset('${r.a.ID}')">
     <div class="row"><b>${esc(r.a.Name)}${r.a.Code ? ' <span class="mute">' + esc(r.a.Code) + '</span>' : ''}</b><b>${fmt(r.c.value)}</b></div>
     <div class="row mute"><span>${fmtU(r.c.units)} ${r.a.Kind === 'Share' ? 'shares' : 'units'} · avg ${fmtP(r.c.avg)}</span>
@@ -1334,6 +1608,18 @@ function editAcctBudget(catId, acct) {
 }
 
 /* ---------- forms ---------- */
+function calcEval(str) {                                   // "500+200+30" -> 730 (only + - × ÷ ( ) and digits are allowed)
+  const t = String(str == null ? '' : str).replace(/[×x*]/g, '*').replace(/÷/g, '/').replace(/[−–]/g, '-').replace(/,/g, '').replace(/\s+/g, '');
+  if (!t) return 0;
+  if (!/^[0-9+\-*/.()]+$/.test(t)) return NaN;
+  try { const r = Function('"use strict";return (' + t + ')')(); return isFinite(r) ? Math.round(r * 100) / 100 : NaN; } catch (e) { return NaN; }
+}
+const calcVal = sel => { const r = calcEval($(sel).value); return isNaN(r) ? 0 : r; };
+function calcShow(id) {
+  const e = $('#' + id), out = $('#calc_' + id); if (!e || !out) return;
+  out.textContent = /[+\-×÷*/]/.test(e.value.replace(/^-/, '')) ? (isNaN(calcEval(e.value)) ? '' : '= ' + n2(calcEval(e.value))) : '';
+}
+function calcIns(id, ch) { const e = $('#' + id); e.value += ch; e.focus(); calcShow(id); }
 function openForm(title, sheet, fields, v, opts) {
   opts = opts || {};
   M = {sheet, fields, v: Object.assign({}, v), opts, rateAuto: !!opts.rateAuto};
@@ -1341,6 +1627,9 @@ function openForm(title, sheet, fields, v, opts) {
     const val = M.v[f.k] != null && M.v[f.k] !== '' ? M.v[f.k] : (f.d != null ? f.d : '');
     const ctl = f.t === 'select'
       ? `<select id="f_${f.k}">${(f.o || []).map(o => `<option value="${esc(o)}" ${o == val ? 'selected' : ''}>${esc(o || '(none)')}</option>`).join('')}</select>`
+      : f.t === 'calc'
+      ? `<input id="f_${f.k}" type="text" inputmode="decimal" autocomplete="off" value="${esc(val)}" oninput="calcShow('f_${f.k}')">
+         <div class="calcbar">${['+', '−', '×', '÷'].map(c => `<button type="button" onpointerdown="event.preventDefault()" onclick="calcIns('f_${f.k}','${c === '−' ? '-' : c}')">${c}</button>`).join('')}<span id="calc_f_${f.k}" class="calcout"></span></div>`
       : `<input id="f_${f.k}" type="${f.t || 'text'}" ${f.t === 'number' ? 'inputmode="decimal" step="any"' : ''} ${f.ro ? 'readonly' : ''} value="${esc(val)}">`;
     return `<label data-k="${f.k}">${f.l}${ctl}</label>`;
   }).join('') + (opts.extra || '') + `<div class="btns"><button class="btn" onclick="saveM()">Save</button>
@@ -1351,6 +1640,7 @@ function openForm(title, sheet, fields, v, opts) {
     ['Type', 'Account', 'ToAccount'].forEach(k => { const e = $('#f_' + k); if (e) e.onchange = () => opts.onChange(false); });
     opts.onChange(true);
   }
+  fields.forEach(f => { if (f.t === 'calc') calcShow('f_' + f.k); });
 }
 function closeM(keep) {
   if (!keep && M && M.newPhoto) trash(M.newPhoto);
@@ -1361,8 +1651,9 @@ function saveM() {
   for (const f of M.fields) {
     const el = $('#f_' + f.k);
     if (!el || el.closest('label').style.display === 'none') { if (el) o[f.k] = ''; continue; }
-    o[f.k] = f.t === 'number' ? parseFloat(el.value) || 0 : el.value.trim();
-    if (f.req && (o[f.k] === '' || (f.t === 'number' && !o[f.k]))) { alert(f.l + ' is required'); el.focus(); return; }
+    if (f.t === 'calc') { const r = calcEval(el.value); if (isNaN(r)) { alert('Check the amount: ' + el.value); el.focus(); return; } o[f.k] = r; }
+    else o[f.k] = f.t === 'number' ? parseFloat(el.value) || 0 : el.value.trim();
+    if (f.req && (o[f.k] === '' || ((f.t === 'number' || f.t === 'calc') && !o[f.k]))) { alert(f.l + ' is required'); el.focus(); return; }
   }
   if (M.opts.validate) { const msg = M.opts.validate(o); if (msg) { alert(msg); return; } }
   if (M.opts.prep) M.opts.prep(o);
@@ -1390,14 +1681,14 @@ function editTx(id, type) {
   const curs = () => [cur(accByName($('#f_Account').value)), cur(accByName($('#f_ToAccount').value))];
   const isCross = () => $('#f_Type').value === 'Transfer' && curs()[0] !== curs()[1];
   const recalcTo = () => {      // Rate is always LKR per 1 USD
-    const a = +$('#f_Amount').value || 0, r = +$('#f_Rate').value || 0;
+    const a = calcVal('#f_Amount'), r = +$('#f_Rate').value || 0;
     if (a && r) $('#f_ToAmount').value = (curs()[0] === 'USD' ? a * r : a / r).toFixed(2);
   };
   openForm(id ? 'Edit transaction' : 'New transaction', 'Transactions', [
     {k:'Type', l:'Type', t:'select', o:['Expense','Income','Transfer']},
-    {k:'Amount', l:'Amount', t:'number', req:true},
-    {k:'Category', l:'Category', t:'select', o:[]},
     {k:'Account', l:'Account', t:'select', o:accs},
+    {k:'Category', l:'Category', t:'select', o:[]},
+    {k:'Amount', l:'Amount', t:'calc', req:true},
     {k:'ToAccount', l:'To account', t:'select', o:accs},
     {k:'Rate', l:'Rate', t:'number'},
     {k:'ToAmount', l:'Amount received', t:'number'},
@@ -1412,13 +1703,20 @@ function editTx(id, type) {
       const cross = ty === 'Transfer' && c !== c2;
       const needRate = ty === 'Transfer' ? cross : c === 'USD';
       const typeChanged = !first && ty !== M.prevType; M.prevType = ty;
-      const keep = first ? v.Category : (typeChanged && !id ? '' : sel.value);
+      if (sel.value === '__all') M.showAll = true;
+      const keep = first ? v.Category : (sel.value === '__all' ? '' : (typeChanged && !id ? '' : sel.value));
       const opt = x => `<option ${x.Name === keep ? 'selected' : ''}>${esc(x.Name)}</option>`;
-      sel.innerHTML = ty === 'Transfer'
-        ? '<option value="">(none)</option><optgroup label="Expense">' + D.Categories.filter(x => x.Type === 'Expense').map(opt).join('') +
-          '</optgroup><optgroup label="Income">' + D.Categories.filter(x => x.Type === 'Income').map(opt).join('') + '</optgroup>'
-        : D.Categories.filter(x => x.Type === ty).map(opt).join('');
+      // only the categories that belong to the chosen account's budget (all of them if it has none yet)
+      const union = new Set();
+      [$('#f_Account').value].concat(ty === 'Transfer' ? [$('#f_ToAccount').value] : []).forEach(a => D.AccBudgets.forEach(x => { if (x.Account === a) union.add(x.Category); }));
+      const restricted = !M.showAll && union.size > 0;
+      const cats = t => D.Categories.filter(x => x.Type === t && (!restricted || union.has(x.Name) || x.Name === (first ? v.Category : keep)));
+      sel.innerHTML = (ty === 'Transfer'
+        ? '<option value="">(none)</option><optgroup label="Expense">' + cats('Expense').map(opt).join('') +
+          '</optgroup><optgroup label="Income">' + cats('Income').map(opt).join('') + '</optgroup>'
+        : cats(ty).map(opt).join('')) + (restricted ? '<option value="__all">Show all categories…</option>' : '');
       show('Category', true);
+      label('Account', ty === 'Transfer' ? 'From account' : 'Account');
       label('Category', ty === 'Transfer' ? 'Budget category (optional, e.g. Saving)' : 'Category');
       show('ToAccount', ty === 'Transfer');
       show('Rate', needRate);
@@ -1442,11 +1740,12 @@ function editTx(id, type) {
       return '';
     }
   });
-  $('#f_Amount').oninput = () => { if (isCross()) recalcTo(); };
+  $('#f_Category').onchange = () => M.opts.onChange(false);
+  $('#f_Amount').addEventListener('input', () => { if (isCross()) recalcTo(); });
   $('#f_Rate').oninput = () => { M.rateAuto = false; if (isCross()) recalcTo(); };
   $('#f_ToAmount').oninput = () => {
     if (!isCross()) return;
-    const a = +$('#f_Amount').value, t = +$('#f_ToAmount').value;
+    const a = calcVal('#f_Amount'), t = +$('#f_ToAmount').value;
     if (a && t) { $('#f_Rate').value = (curs()[0] === 'USD' ? t / a : a / t).toFixed(4); M.rateAuto = false; }
   };
   renderPhoto();
