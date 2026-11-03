@@ -1,5 +1,5 @@
 // Caches the app files so it opens with no internet. Bump VERSION when you upload a new index.html.
-const VERSION = 'mymoney-v9';
+const VERSION = 'mymoney-v10';
 const FILES = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES.map(f => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting()));

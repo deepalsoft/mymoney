@@ -28,7 +28,7 @@
     InvTx: ['ID','AssetID','Date','Type','Units','Price','Fees','Amount','Account','Note'],
     Prices: ['ID','AssetID','Date','Price']
   };
-  const VER = 'v9';
+  const VER = 'v10';
   const LS = window.localStorage;
   const cfg = () => ({ url: LS.getItem('mm_url') || '', key: LS.getItem('mm_key') || '' });
   const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -441,7 +441,7 @@ svg text{fill:var(--mute)}
    and every rate update is saved as a new row in the Rates sheet (history is never overwritten). */
 let D = {Categories:[],Accounts:[],Transactions:[],Goals:[],Settings:[],Rates:[],Loans:[],LoanPayments:[],AccBudgets:[],Assets:[],InvTx:[],Prices:[]};
 let homeAcct = null, booted = false;     // homeAcct null = not chosen yet, use the default account
-let homeOpen = null, stmtFrom = null;
+let homeOpen = null, stmtFrom = null, moreEdit = false;
 let tab = 'home', M = null, homeAll = false, reorder = false, sub = null, invKind = 'Unit Trust', budAcct = null, stmtAcc = null, stmtShown = 40, showSettled = false, reopen = null;
 const now = new Date();
 let month = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
@@ -464,7 +464,7 @@ function setData(d) {
 function call(fn, ...args) {
   $('#load').style.display = 'block';
   google.script.run
-    .withSuccessHandler(d => { setData(d); if (!booted) { booted = true; tab = tabList()[0][0]; } $('#load').style.display = 'none'; render(); if (reopen) { const r = reopen; reopen = null; if (r.indexOf('asset:') === 0) showAsset(r.slice(6)); else showLoan(r); } })
+    .withSuccessHandler(d => { setData(d); if (!booted) { booted = true; tab = tabList()[0][0]; } $('#load').style.display = 'none'; render(); if (reopen) { const r = reopen; reopen = null; if (r.indexOf('asset:') === 0) showAsset(r.slice(6)); else if (r.indexOf('acctbud:') === 0) editAcctBudget(r.slice(8)); else showLoan(r); } })
     .withFailureHandler(e => { $('#load').style.display = 'none'; alert('Error: ' + e.message); })
     [fn](...args);
 }
@@ -556,7 +556,7 @@ function render() {
   $('#fab').style.display = (tab === 'home' || tab === 'tx') ? 'block' : 'none';
   $('#app').innerHTML = ({home, ov, tx, ana, budget, acc, more})[tab]();
 }
-function go(t) { tab = t; reorder = false; sub = null; stmtAcc = null; stmtFrom = null; render(); window.scrollTo(0, 0); }
+function go(t) { tab = t; reorder = false; sub = null; stmtAcc = null; stmtFrom = null; moreEdit = false; render(); window.scrollTo(0, 0); }
 function shift(d) {
   const [y, m] = month.split('-').map(Number);
   const dt = new Date(y, m - 1 + d, 1);
@@ -803,6 +803,7 @@ const endDrag = () => {
   d.el.classList.remove('dragging');
   const ids = Array.from(d.parent.children).filter(x => x.classList.contains('dr') && x.dataset.group === d.group).map(x => x.dataset.id);
   if (d.kind === 'tabs') { setSet('TabOrder', ids.join(',')); render(); return; }
+  if (d.kind === 'more') { setSet('MoreOrder', ids.join(',')); render(); return; }
   const list = d.kind === 'Categories' ? D.Categories : D.Accounts;
   ids.forEach((id, k) => { const x = list.find(y => y.ID === id); if (x) x.Order = k + 1; });
   list.sort(byOrder);
@@ -828,18 +829,20 @@ function budget() {
   const ex = D.Categories.filter(c => c.Type === 'Expense'), inc = D.Categories.filter(c => c.Type === 'Income');
   if (budAcct) {                                           // budget of one account
     const amt = c => sum(D.AccBudgets.filter(x => x.Account === budAcct && x.Category === c.Name), x => x.Amount);
+    const linked = c => D.AccBudgets.some(x => x.Account === budAcct && x.Category === c.Name);
+    const exL = ex.filter(linked), incL = inc.filter(linked);               // only the categories added to this account
     const rows = l => l.map(c => { const v = amt(c);
       if (reorder) return dragCat(c);
       const ab = D.AccBudgets.find(x => x.Account === budAcct && x.Category === c.Name), dd = ab ? dueDay(ab) : 0;
       return budRow(c, `<b class="${v ? '' : 'mute'}">${v ? fmt(v) : '–'}</b>`, dd ? ` <span class="mute">· due ${dd}${th(dd)}</span>` : '', `editAcctBudget('${c.ID}')`); }).join('')
-      || '<div class="mute">None yet</div>';
+      || '<div class="mute" style="padding:6px 0">None yet. Tap Add category.</div>';
     const be = sum(ex, amt), bi = sum(inc, amt);
     return `${sel}${reorder ? '<div class="mute" style="margin:0 0 10px">Drag ⠿ to change the order. It is used everywhere in the app.</div>' : head3(bi, be)}
-    <h2>Expense categories</h2><div class="card tight">${rows(ex)}</div>
-    <h2>Income categories</h2><div class="card tight">${rows(inc)}</div>
-    ${reorder ? '' : `<div class="mute">Monthly budget for ${esc(budAcct)}. The same amounts apply every month. Tap a category to set its budget and due day.</div>`}
+    <h2>Expense categories</h2><div class="card tight">${rows(exL)}</div>
+    <h2>Income categories</h2><div class="card tight">${rows(incL)}</div>
+    ${reorder ? '' : `<div class="mute">Budget categories of ${esc(budAcct)} only. The same amounts apply every month. Tap a category to set its budget and due day.</div>`}
     <div class="btns">${reorder ? '<button class="btn" onclick="reorder=false;render()">Done</button>'
-      : '<button class="btn" onclick="editCat()">Add category</button><button class="btn ghost" onclick="reorder=true;render()">↕ Reorder categories</button>'}</div>`;
+      : '<button class="btn" onclick="addToAcct()">Add category</button><button class="btn ghost" onclick="reorder=true;render()">↕ Reorder categories</button>'}</div>`;
   }
   const be = sum(ex, c => c.Budget), bi = sum(inc, c => c.Budget);
   const rows = l => l.map((c, i) => reorder
@@ -1031,10 +1034,18 @@ function more() {
   const act = D.Loans.filter(l => outstanding(l) > 0.005);
   const lent = sum(act.filter(l => l.Direction === 'Lent'), outstanding), owe = sum(act.filter(l => l.Direction === 'Borrowed'), outstanding);
   const tile = (key, ic, name, line) => `<div class="card row" onclick="sub='${key}';render();window.scrollTo(0,0)"><div><b>${ic} ${name}</b><div class="mute">${line}</div></div><span class="mute">›</span></div>`;
-  return `<h1>More</h1>
-  ${tile('goals', '⭐', 'Goals', D.Goals.length + (D.Goals.length === 1 ? ' goal' : ' goals'))}
-  ${tile('loans', '🤝', 'Loans', `Owed to you ${fmt(lent)} · You owe ${fmt(owe)}`)}
-  ${tile('inv', '📈', 'Investments', `Unit trusts ${short(sum(D.Assets.filter(a => a.Kind === 'Unit Trust'), a => calc(a).value))} · Shares ${short(sum(D.Assets.filter(a => a.Kind === 'Share'), a => calc(a).value))}`)}
+  const items = {
+    goals: ['⭐', 'Goals', D.Goals.length + (D.Goals.length === 1 ? ' goal' : ' goals')],
+    loans: ['🤝', 'Loans', `Owed to you ${fmt(lent)} · You owe ${fmt(owe)}`],
+    inv: ['📈', 'Investments', `Unit trusts ${short(sum(D.Assets.filter(a => a.Kind === 'Unit Trust'), a => calc(a).value))} · Shares ${short(sum(D.Assets.filter(a => a.Kind === 'Share'), a => calc(a).value))}`]
+  };
+  const known = Object.keys(items);
+  const ord = Array.from(new Set(String(getSet('MoreOrder') || '').split(',').filter(k => known.indexOf(k) >= 0).concat(known)));
+  const tiles = ord.map(k => moreEdit
+    ? `<div class="card row dr" data-kind="more" data-group="m" data-id="${k}"><b>${items[k][0]} ${items[k][1]}</b><span class="grip">⠿</span></div>`
+    : tile(k, items[k][0], items[k][1], items[k][2])).join('');
+  return `<div class="row"><h1>More</h1><span class="lnk" onclick="moreEdit=!moreEdit;render()">${moreEdit ? 'Done' : '↕ Reorder'}</span></div>
+  <div>${tiles}</div>
   ${tile('tabs', '↕', 'Tabs', 'Choose and reorder the bottom tabs')}
   ${allTabs().filter(t => hiddenSet().has(t[0])).map(t => `<div class="card row" onclick="go('${t[0]}')"><div><b>${t[1]} ${t[2]}</b></div><span class="mute">›</span></div>`).join('')}
   <div class="card row" onclick="mmSettings()"><div><b>☁ Sync settings</b><div class="mute">Web App URL and access key. Tap to sync now.</div></div><span class="mute">›</span></div>`;
@@ -1518,14 +1529,26 @@ function viewPhoto(id) {
 function closeViewer() { $('#viewer').style.display = 'none'; $('#viewer').innerHTML = ''; }
 
 /* ----- other forms ----- */
-function editCat(id) {
+const rid = () => (Math.random().toString(16) + '00000000').slice(2, 10);
+function addToAcct() {                                       // add a category to the selected account's budget
+  if (!budAcct) return;
+  const free = D.Categories.filter(c => !D.AccBudgets.some(x => x.Account === budAcct && x.Category === c.Name));
+  if (!free.length) { editCat(null, true); return; }
+  const NEW = '＋ New category…', label = c => c.Name + (c.Type === 'Income' ? ' (income)' : '');
+  openForm('Add category to ' + esc(budAcct), 'x', [{k:'Cat', l:'Category', t:'select', o: free.map(label).concat([NEW])}], {}, {
+    noDelete: true,
+    submit: o => { if (o.Cat === NEW) editCat(null, true); else { const c = free.find(x => label(x) === o.Cat); if (c) editAcctBudget(c.ID); } }
+  });
+}
+function editCat(id, forAcct) {
+  const nid = forAcct ? rid() : '';
   const v = id ? D.Categories.find(c => c.ID === id) : {Type: 'Expense'};
   const split = !!v.Name && D.AccBudgets.some(x => x.Category === v.Name);
   openForm(id ? 'Edit category' : 'New category', 'Categories', [
     {k:'Type', l:'Type', t:'select', o:['Expense','Income']},
     {k:'Name', l:'Name', req:true},
     {k:'Budget', l: split ? 'Monthly budget in LKR (total of its account budgets; change them in Budget)' : 'Monthly budget in LKR (income: monthly target)', t:'number', ro: split}
-  ], v);
+  ], v, forAcct ? {noDelete: true, prep: o => { o.ID = nid; }, reopen: 'acctbud:' + nid} : undefined);
 }
 function editAcc(id) {
   const v = id ? D.Accounts.find(a => a.ID === id) : {Type: 'Bank', Currency: 'LKR'};
