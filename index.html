@@ -29,7 +29,7 @@
     Prices: ['ID','AssetID','Date','Price'],
     FDs: ['ID','Name','Principal','Rate','StartDate','TermMonths','Payout','Account','Note','Closed']
   };
-  const VER = 'v13';
+  const VER = 'v14';
   const LS = window.localStorage;
   const cfg = () => ({ url: LS.getItem('mm_url') || '', key: LS.getItem('mm_key') || '' });
   const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -734,9 +734,10 @@ const monthBar = () => {
   const name = new Date(y, m - 1, 1).toLocaleString(undefined, {month:'long', year:'numeric'});
   return `<div class="month"><button onclick="shift(-1)">‹</button><b>${name}</b><button onclick="shift(1)">›</button></div>`;
 };
-const progress = (spent, budget, cls) => {
+const spendColor = p => p >= 100 ? 'var(--warn)' : p >= 80 ? '#ea580c' : p >= 60 ? '#ca8a04' : '#16a34a';   // green -> yellow -> orange -> red
+const progress = (spent, budget, cls, spend) => {              // spend = true: colour changes as the budget is used up
   const p = budget > 0 ? spent / budget * 100 : 0;
-  return `<div class="bar ${cls || ''}"><i class="${p>100?'over':''}" style="width:${Math.max(0,Math.min(p,100))}%"></i></div>`;
+  return `<div class="bar ${cls || ''}"><i class="${p>100?'over':''}" style="width:${Math.max(0,Math.min(p,100))}%${spend ? ';background:' + spendColor(p) : ''}"></i></div>`;
 };
 const mvBtns = (sheet, list, x, i) => `<span class="mv"><button ${i===0?'disabled':''} onclick="move('${sheet}','${x.ID}',-1)">▲</button><button ${i===list.length-1?'disabled':''} onclick="move('${sheet}','${x.ID}',1)">▼</button></span>`;
 
@@ -825,7 +826,7 @@ function home() {
     const left = b - s;
     return `<div class="crow" onclick="toggleHome('${c.ID}')"><div class="cols"><span class="nm"><span class="mute">${homeOpen === c.ID ? '▾' : '▸'}</span> ${esc(c.Name)}</span>
       <span class="mute">${b ? num(b) : '–'}</span><span>${num(s)}</span>
-      <span class="${isExp && b && left < 0 ? 'warn' : ''}"><b>${b ? num(left) : '–'}</b></span></div>${b ? progress(s, b, 'thin') : ''}${homeOpen === c.ID ? hist(c) : ''}</div>`;
+      <span class="${isExp && b && left < 0 ? 'warn' : ''}"><b>${b ? num(left) : '–'}</b></span></div>${b ? progress(s, b, 'thin', isExp) : ''}${homeOpen === c.ID ? hist(c) : ''}</div>`;
   };
   const shown = homeAll ? rows : rows.slice(0, 5);
   // loans only count for the account they were lent from / received into
@@ -1255,7 +1256,7 @@ function ov() {
   const invHtml = (held.length || fdc.length) ? `<div class="ov">${invBlock('Unit trusts', ut)}${invBlock('Shares', sh)}${fdBlock}</div>` : `<div class="ov"><div class="ov-hint">No investments held yet.</div></div>`;
 
   const dt = new Date().toLocaleDateString(undefined, {weekday: 'long', day: 'numeric', month: 'long'});
-  return `${banner(bannerLine())}
+  return `<h1>Overview</h1><div class="ov-date">${dt}</div>
   ${ovSec('due', '#ea580c', 'rgba(234,88,12,.13)', 'Due', open.length ? fmt(dueTotal) + ' to pay' : bills.length ? 'All paid ✓' : '', billsHtml)}
   ${ovSec('sav', '#0d9488', 'rgba(13,148,136,.13)', 'Savings', fmt(savTotal), savHtml)}
   ${ovSec('loan', '#2563eb', 'rgba(37,99,235,.13)', 'Loans', act.length ? 'Net ' + sgn(sum(lent, outstanding) - sum(owe, outstanding)) : '', loansHtml)}
@@ -1788,7 +1789,7 @@ function editTx(id, type) {
     const spent = sum(D.Transactions.filter(t => t.ID !== id && String(t.Date).slice(0, 7) === ym && t.Category === name && (exp ? isOut(t) : isInTag(t)) && (!ab || t.Account === acct || (!exp && t.ToAccount === acct))), val);
     let amt = calcVal('#f_Amount'); if (cur(accByName(acct)) === 'USD') amt *= (+$('#f_Rate').value || sellRate());
     const after = spent + amt, pct = after / budget * 100, left = budget - after;
-    const col = !exp ? 'var(--acc)' : pct >= 100 ? 'var(--warn)' : pct >= 80 ? '#ea580c' : pct >= 60 ? 'var(--soon)' : 'var(--inc)';
+    const col = !exp ? 'var(--acc)' : spendColor(pct);
     selC.style.borderColor = col;
     box.innerHTML = `<div class="bh-bar"><i style="width:${Math.min(pct, 100).toFixed(0)}%;background:${col}"></i></div>
       <div class="bh-t" style="color:${col}">${exp ? (pct >= 100 ? 'Over budget by ' + fmt(-left) : 'Left ' + fmt(left) + ' of ' + fmt(budget)) : 'Received ' + fmt(after) + ' of ' + fmt(budget)}
