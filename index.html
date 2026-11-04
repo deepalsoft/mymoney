@@ -29,7 +29,7 @@
     Prices: ['ID','AssetID','Date','Price'],
     FDs: ['ID','Name','Principal','Rate','StartDate','TermMonths','Payout','Account','Note','Closed']
   };
-  const VER = 'v11';
+  const VER = 'v13';
   const LS = window.localStorage;
   const cfg = () => ({ url: LS.getItem('mm_url') || '', key: LS.getItem('mm_key') || '' });
   const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -455,6 +455,8 @@ nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);b
 nav button{flex:1;background:none;border:0;color:var(--mute);padding:9px 0 7px;font-size:9px;white-space:nowrap;overflow:hidden}
 nav button span{display:block;font-size:18px}
 nav button{font-size:8.5px;min-width:0}
+.bdg{position:absolute;top:-3px;margin-left:2px;min-width:15px;height:15px;border-radius:8px;background:var(--warn);color:#fff;font:700 10px/15px system-ui,sans-serif;font-style:normal;padding:0 4px;box-sizing:border-box;text-align:center}
+nav button span{position:relative}
 .dots{display:flex;gap:5px;justify-content:center;margin:8px 0 0}
 .dots i{width:6px;height:6px;border-radius:50%;background:var(--track);transition:all .2s}
 .dots i.on{background:var(--acc);width:16px;border-radius:4px}
@@ -478,10 +480,29 @@ body[data-anim="lively"] #app>*:nth-child(4){animation-delay:.12s}body[data-anim
 body[data-anim="lively"] #app>*:nth-child(n+6){animation-delay:.2s}
 body:not([data-anim="off"]) .btn:active,body:not([data-anim="off"]) .card:active,body:not([data-anim="off"]) .item:active,body:not([data-anim="off"]) nav button:active{transform:scale(.97);transition:transform .08s}
 body[data-anim="lively"] nav button.on span{animation:mm-pop .4s cubic-bezier(.34,1.56,.64,1)}
+.banner{display:flex;gap:12px;align-items:center;background:linear-gradient(135deg,#0f766e,#2dd4bf);color:#fff;border-radius:18px;padding:14px 16px;margin:0 0 12px;box-shadow:0 4px 14px rgba(15,118,110,.25)}
+.bn-e{font-size:36px;line-height:1}.bn-hi{font-size:20px;font-weight:700}.bn-d{font-size:13px;opacity:.92;margin-top:1px}
+.bn-l{font-size:12.5px;margin-top:6px;background:rgba(255,255,255,.2);display:inline-block;padding:3px 10px;border-radius:99px}
+.hero{background:linear-gradient(135deg,#134e4a,#0f766e);color:#fff;border-radius:18px;padding:16px;margin-bottom:12px;box-shadow:0 4px 14px rgba(15,118,110,.25)}
+.hero .big{font-size:30px;font-weight:700;margin:2px 0 8px}.hero .hsm{font-size:12.5px;opacity:.85}
+.hchips{display:flex;gap:6px;flex-wrap:wrap}.hchip{background:rgba(255,255,255,.17);border-radius:99px;padding:3px 10px;font-size:12px}
+.hero .lnk{color:#fff;opacity:.9;margin-left:0;margin-right:14px;text-decoration:underline}
+.ac-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:2px 14px;margin-bottom:12px}
+.ac-gh{display:flex;align-items:center;gap:12px;padding:12px 0 6px}.ac-gh b{flex:1;font-size:16px}.ac-gh .ac-tot{font-weight:700}
+.ac-r{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line)}.ac-r:last-child{border-bottom:0}
+.ac-ic{flex:none;width:38px;height:38px;border-radius:12px;background:var(--track);background:color-mix(in srgb,var(--t) 16%,transparent);display:flex;align-items:center;justify-content:center;font-size:19px}
+.ac-n{flex:1;min-width:0}.ac-n b{display:block;font-size:16px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ac-n small{color:var(--mute);font-size:12px}
+.ac-b{text-align:right}.ac-b b{display:block;font-size:16px;font-weight:700}.ac-b small{color:var(--mute);font-size:12px}
+.ac-r.nest{padding-left:6px}
+.actions{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.actions button{border:1px solid var(--line);background:var(--card);color:var(--acc);border-radius:14px;padding:12px 4px;font-size:14px;font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:8px}.chipbtn{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:99px;padding:8px 14px;font-size:14px}
+.bhint{margin:-4px 0 12px}.bh-bar{height:8px;border-radius:5px;background:var(--track);overflow:hidden}.bh-bar i{display:block;height:100%;border-radius:5px;transition:width .25s,background .25s}
+.bh-t{font-size:12.5px;font-weight:600;margin-top:4px}
 .ov-date{color:var(--mute);font-size:13px;margin:-8px 0 4px}
 .ov-sec{--c:#0f766e;--ct:rgba(15,118,110,.12)}
 .ov-sec .ov{border-top:3px solid var(--c)}
-.ov-sec .ov-h b{color:var(--c)}.car{display:inline-block;font-style:normal;margin-right:7px;transition:transform .2s;font-size:12px}
+.ov-sec .ov-h b{color:var(--ink)}.car{display:inline-block;font-style:normal;margin-right:7px;transition:transform .2s;font-size:12px}
 .ov-sec.col .car{transform:rotate(-90deg)}
 .ov-sec.col .ov-h{margin-bottom:0}
 .ov-sec .chip{background:var(--ct);color:var(--c)}
@@ -491,15 +512,16 @@ body[data-anim="lively"] nav button.on span{animation:mm-pop .4s cubic-bezier(.3
 .ov-sec .bar i{background:var(--c)}
 .ov-sec .ov-sub{color:var(--c);font-weight:600}
 .ov-h{display:flex;justify-content:space-between;align-items:baseline;margin:24px 4px 8px}
-.ov-h b{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--mute);font-weight:600}
-.ov-h span{font-size:13px;font-weight:600}
+.ov-h b{font-size:18px;font-weight:700;display:flex;align-items:center;gap:10px}
+.ov-h .ic{width:34px;height:34px;border-radius:11px;background:var(--ct);display:inline-flex;align-items:center;justify-content:center;font-size:18px}
+.ov-h span{font-size:14px;font-weight:700;display:flex;align-items:center}
 .ov{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:2px 14px}
 .ov-r{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
 .ov-r:last-child{border-bottom:0}
-.ov-r .l{min-width:0}.ov-r .l b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ov-r .l{min-width:0}.ov-r .l b{display:block;font-size:16.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ov-r .l small{color:var(--mute);font-size:12px}
 .ov-r .rt{text-align:right;white-space:nowrap}.ov-r .rt b{font-weight:600}
-.ov-sub{font-size:12px;color:var(--mute);padding:10px 0 0;display:flex;justify-content:space-between}
+.ov-sub{font-size:14px;color:var(--mute);padding:10px 0 0;display:flex;justify-content:space-between}
 .chip{display:inline-block;font-size:11.5px;padding:2px 9px;border-radius:99px;background:var(--track);color:var(--mute);white-space:nowrap;margin-top:2px}
 .chip.bad{background:rgba(185,28,28,.13);color:var(--warn)}
 .chip.soon{background:rgba(202,138,4,.16);color:var(--soon)}
@@ -600,7 +622,7 @@ function setData(d) {
 function call(fn, ...args) {
   $('#load').style.display = 'block';
   google.script.run
-    .withSuccessHandler(d => { setData(d); if (!booted) { booted = true; tab = tabList()[0][0]; } $('#load').style.display = 'none'; render(); if (reopen) { const r = reopen; reopen = null; if (r.indexOf('asset:') === 0) showAsset(r.slice(6)); else if (r.indexOf('fd:') === 0) showFD(r.slice(3)); else if (r.indexOf('acctbud:') === 0) editAcctBudget(r.slice(8)); else showLoan(r); } })
+    .withSuccessHandler(d => { setData(d); const first = !booted; if (first) { booted = true; tab = tabList()[0][0]; } $('#load').style.display = 'none'; render(); if (first) setTimeout(() => dueAlert(false), 400); if (reopen) { const r = reopen; reopen = null; if (r.indexOf('asset:') === 0) showAsset(r.slice(6)); else if (r.indexOf('fd:') === 0) showFD(r.slice(3)); else if (r.indexOf('acctbud:') === 0) editAcctBudget(r.slice(8)); else showLoan(r); } })
     .withFailureHandler(e => { $('#load').style.display = 'none'; alert('Error: ' + e.message); })
     [fn](...args);
 }
@@ -693,7 +715,7 @@ function render() {
   const key = tab + '|' + (sub || '') + '|' + (stmtAcc || '') + '|' + (homeAcct || '') + '|' + (budAcct || '');
   const enter = key !== lastKey; lastKey = key;
   document.body.dataset.anim = animMode();
-  $('#nav').innerHTML = tabList().map(t => `<button class="${tab===t[0] || (t[0]==='more' && hiddenSet().has(tab)) ? 'on':''}" onclick="go('${t[0]}')"><span>${t[1]}</span>${t[2]}</button>`).join('');
+  $('#nav').innerHTML = tabList().map(t => `<button class="${tab===t[0] || (t[0]==='more' && hiddenSet().has(tab)) ? 'on':''}" onclick="go('${t[0]}')"><span>${t[1]}${t[0] === 'ov' && dueItems().length ? `<em class="bdg">${dueItems().length}</em>` : ''}</span>${t[2]}</button>`).join('');
   $('#fab').style.display = (tab === 'home' || tab === 'tx') ? 'block' : 'none';
   $('#app').innerHTML = ({home, ov, tx, ana, budget, acc, more})[tab]();
   const a = $('#app'); a.classList.remove('in', 'inl', 'inr');
@@ -747,11 +769,17 @@ function setHomeAcct(i) { homeAcct = HOME_OPTS[i] || ''; closeM(); render(); }
 function makeDefault(i) { const n = HOME_OPTS[i] || ''; setSet('HomeAccount', n); homeAcct = n; closeM(); render(); }
 
 /* ---------- swipe: Home -> accounts, elsewhere -> tabs ---------- */
-let slideDir = 0;
+let slideDir = 0, hiddenSince = 0;
+document.addEventListener('visibilitychange', () => { if (document.hidden) hiddenSince = Date.now(); else if (hiddenSince && Date.now() - hiddenSince > 30 * 60 * 1000) { render(); dueAlert(false); } });
 function swipeTab(dir) {
   const l = tabList().map(t => t[0]), cur = l.indexOf(tab) >= 0 ? l.indexOf(tab) : l.indexOf('more'), n = cur + dir;
   if (n < 0 || n >= l.length) return;
   slideDir = dir; go(l[n]); window.scrollTo(0, 0);
+}
+function swipeBud(dir) {
+  const o = [''].concat(leafList().map(x => x.Name)), n = o.indexOf(budAcct || '') + dir;
+  if (n < 0 || n >= o.length) { swipeTab(dir); return; }
+  slideDir = dir; budAcct = o[n]; reorder = false; render();
 }
 function swipeAcct(dir) {
   const o = [''].concat(homeList().map(x => x.Name)), n = o.indexOf(homeAcct) + dir;
@@ -766,7 +794,7 @@ document.addEventListener('touchend', e => {
   if (Math.abs(dx) < 70 || Math.abs(dy) > Math.abs(dx) * 0.6 || Date.now() - s0.t > 800 || s0.x < 24) return;
   if ($('#sheet').style.display === 'block' || (typeof DR !== 'undefined' && DR)) return;
   if (s0.el.closest && s0.el.closest('input,select,textarea,.grip,.seg,#sheet,#bd,nav,.dr')) return;
-  if (tab === 'home' && !sub && s0.el.closest('.swipe-acct')) swipeAcct(dx < 0 ? 1 : -1); else swipeTab(dx < 0 ? 1 : -1);
+  if (tab === 'home' && !sub && s0.el.closest('.swipe-acct')) swipeAcct(dx < 0 ? 1 : -1); else if (tab === 'budget' && s0.el.closest('.swipe-bud')) swipeBud(dx < 0 ? 1 : -1); else swipeTab(dx < 0 ? 1 : -1);
 });
 function toggleHome(id) { homeOpen = homeOpen === id ? null : id; render(); }
 function home() {
@@ -805,7 +833,7 @@ function home() {
   const rec = sum(open.filter(l => l.Direction === 'Lent'), outstanding), owe = sum(open.filter(l => l.Direction === 'Borrowed'), outstanding);
   const goLoans = "tab='more';sub='loans';render();window.scrollTo(0,0)";
   const opts = [''].concat(homeList().map(x => x.Name)), at = Math.max(0, opts.indexOf(homeAcct));
-  return `${monthBar()}
+  return `${banner(bannerLine())}${monthBar()}
   <div class="card tight swipe-acct">
     <div class="row"><span class="mute">Left this month</span><span class="pill" onclick="pickAcct()">${a && a.Name === defAcct() ? '★ ' : ''}${esc(a ? a.Name : 'All accounts')} ▾</span></div>
     <div class="big ${inc - exp < 0 ? 'warn' : ''}" style="font-size:26px">${fmt(inc - exp)}</div>
@@ -937,7 +965,7 @@ function ana() {
 }
 
 const dragCat = c => `<div class="item row dr" data-kind="Categories" data-group="${c.Type}" data-id="${c.ID}"><b>${esc(c.Name)}</b><span class="grip">⠿</span></div>`;
-const head3 = (bi, be) => `<div class="card tight"><div class="row"><span class="mute">Planned income</span><b class="inc">${fmt(bi)}</b></div>
+const head3 = (bi, be) => `<div class="card tight swipe-bud"><div class="row"><span class="mute">Planned income</span><b class="inc">${fmt(bi)}</b></div>
   <div class="row" style="margin-top:4px"><span class="mute">Planned expenses</span><b class="exp">${fmt(be)}</b></div>
   <div class="row" style="margin-top:4px"><span class="mute">Remaining</span><b class="${bi-be<0?'warn':''}">${fmt(bi-be)}</b></div></div>`;
 
@@ -990,10 +1018,12 @@ function budget() {
   if (budAcct === null) { const d = getSet('BudgetAccount'); budAcct = d && leaves.some(x => x.Name === d) ? d : ''; }
   if (budAcct && !leaves.some(x => x.Name === budAcct)) budAcct = '';
   const bdef = getSet('BudgetAccount') || '';
-  const sel = `<div class="row" style="gap:8px;align-items:center"><select class="acctsel" style="flex:1" onchange="budAcct=this.value;reorder=false;render()">
+  const bo = [''].concat(leaves.map(x => x.Name)), bat = Math.max(0, bo.indexOf(budAcct));
+  const sel = `<div class="swipe-bud"><div class="row" style="gap:8px;align-items:center"><select class="acctsel" style="flex:1" onchange="budAcct=this.value;reorder=false;render()">
     <option value="">All accounts</option>${leaves.map(a => `<option value="${esc(a.Name)}" ${a.Name === budAcct ? 'selected' : ''}>${esc(accLabel(a))}</option>`).join('')}</select>
     <span class="star" title="Open the Budget tab on this account" onclick="toggleBudDef()">${bdef === budAcct ? '★' : '☆'}</span></div>
-    <div class="mute" style="margin:2px 0 8px;font-size:12px">${bdef ? '★ Default: ' + esc(bdef) : 'Tap ☆ to make the selected account the default for this tab.'}</div>`;
+    <div class="mute" style="margin:2px 0 8px;font-size:12px">${bdef ? '★ Default: ' + esc(bdef) : 'Tap ☆ to make the selected account the default for this tab. Swipe to switch account.'}</div>
+    ${bo.length > 1 ? `<div class="dots" style="margin:0 0 8px">${bo.map((_, i) => `<i class="${i === bat ? 'on' : ''}"></i>`).join('')}</div>` : ''}</div>`;
   const ex = D.Categories.filter(c => c.Type === 'Expense'), inc = D.Categories.filter(c => c.Type === 'Income');
   if (budAcct) {                                           // budget of one account
     const amt = c => sum(D.AccBudgets.filter(x => x.Account === budAcct && x.Category === c.Name), x => x.Amount);
@@ -1073,21 +1103,36 @@ function statement() {
     ${all ? `<div class="srow"><div><b>Opening balance</b></div><div class="right"><b>${f(+a.Opening || 0)}</b></div></div>` : ''}
     ${all ? '' : `<div class="more" onclick="stmtShown+=40;render()">Show earlier (${rows.length - stmtShown} more)</div>`}</div>`;
 }
+const accIc = a => ({Cash: '💵', Bank: '🏦', Card: '💳', Savings: '🐷', Investment: '📈', Other: '🧾'}[a.Type] || '🏦');
+const accTint = a => ({Cash: '#16a34a', Bank: '#2563eb', Card: '#c026d3', Savings: '#0d9488', Investment: '#4f46e5', Other: '#6b7280'}[a.Type] || '#2563eb');
+function accRow(a, nested) {
+  const c = cur(a), t = own(a), tg = +a.Target || 0;
+  return `<div class="ac-r ${nested ? 'nest' : ''}" onclick="openStmt('${a.ID}')"><span class="ac-ic" style="--t:${accTint(a)}">${accIc(a)}</span>
+    <div class="ac-n"><b>${esc(a.Name)}</b><small>${esc(a.Type || '')}${c === 'USD' ? ' · USD' : ''}</small></div>
+    <div class="ac-b"><b class="${t < 0 ? 'warn' : ''}">${c === 'USD' ? fmtC(t, 'USD') : num(t)}</b>${c === 'USD' ? `<small>≈ ${num(t * rateOf('USD'))}</small>` : ''}</div></div>
+    ${tg > 0 ? `<div style="padding:0 0 10px 50px"><div class="row mute" style="font-size:12px"><span>Target ${num(tg)}</span><span>${Math.max(0, t / tg * 100).toFixed(0)}%</span></div>${progress(t, tg, 'thin')}</div>` : ''}`;
+}
 function acc() {
   if (stmtAcc) return statement();
   const lr = lastRate();
-  const list = `<div class="card tight">${roots().map(a => accNode(a, 0)).join('') || '<div class="empty">No accounts yet.</div>'}</div>`;
-  if (reorder) return `<div class="mute" style="margin-bottom:8px">Drag ⠿ to change the order within each level.</div>${list}
+  if (reorder) return `<div class="mute" style="margin-bottom:8px">Drag ⠿ to change the order within each level.</div><div class="card tight">${roots().map(a => accNode(a, 0)).join('') || '<div class="empty">No accounts yet.</div>'}</div>
     <div class="btns"><button class="btn" onclick="reorder=false;render()">Done</button></div>`;
-  return `<div class="card tight"><div class="row"><div><div class="mute">Total (LKR)</div><b style="font-size:20px">${fmt(sum(roots(), totalLkr))}</b></div>
-    <div class="right"><div class="mute">USD buy / sell${lr ? ' · ' + esc(lr.Date) : ''}</div><b style="font-size:14px">${n2(buyRate())} / ${n2(sellRate())}</b></div></div>
-    <div class="row" style="justify-content:flex-end;margin-top:2px"><span class="lnk" onclick="editRates()">Update rate</span><span class="lnk" onclick="showRates()">History</span></div></div>
-  ${list}
-  <div class="grid3"><button class="btn ghost" onclick="editAcc()">＋ Account</button>
-    <button class="btn ghost" onclick="editTx(null,'Transfer')">⇄ Transfer</button>
-    <button class="btn ghost" onclick="reorder=true;render()">↕ Reorder</button></div>
-  <div class="grid3" style="grid-template-columns:1fr 1fr;margin-top:8px"><button class="btn ghost" onclick="tab='more';sub='tabs';reorder=false;render();window.scrollTo(0,0)">↕ Reorder tabs</button>
-    <button class="btn ghost" onclick="pickAcct()">★ Default account</button></div>`;
+  const byType = {};
+  leafList().forEach(a => { const k = a.Type || 'Other'; byType[k] = (byType[k] || 0) + own(a) * rateOf(cur(a)); });
+  const flat = a => kids(a).reduce((r, k) => r.concat([k], flat(k)), []);
+  const group = a => {
+    const ks = flat(a);
+    if (!ks.length) return `<div class="ac-card">${accRow(a)}</div>`;
+    const ownBal = (+a.Opening || 0) !== 0 || entries(a).length;
+    return `<div class="ac-card"><div class="ac-gh" onclick="openStmt('${a.ID}')"><span class="ac-ic" style="--t:${accTint(a)}">${accIc(a)}</span><b>${esc(a.Name)}</b><span class="ac-tot">${fmt(totalLkr(a))}</span></div>
+      ${ownBal ? accRow(a, true) : ''}${ks.map(k => accRow(k, true)).join('')}</div>`;
+  };
+  return `<div class="hero"><div class="hsm">Net worth</div><div class="big">${fmt(sum(roots(), totalLkr))}</div>
+    <div class="hchips">${Object.keys(byType).map(k => `<span class="hchip">${accIc({Type: k})} ${esc(k)} ${short(byType[k])}</span>`).join('')}</div>
+    <div class="hsm" style="margin-top:10px">USD buy ${n2(buyRate())} · sell ${n2(sellRate())}${lr ? ' · ' + esc(lr.Date) : ''}</div>
+    <div style="margin-top:4px"><span class="lnk" onclick="editRates()">Update rate</span><span class="lnk" onclick="showRates()">History</span></div></div>
+  ${roots().length ? roots().map(group).join('') : '<div class="empty">No accounts yet.</div>'}
+  <div class="actions"><button onclick="editAcc()">＋ Account</button><button onclick="editTx(null,'Transfer')">⇄ Transfer</button><button onclick="reorder=true;render()">↕ Reorder</button></div>`;
 }
 
 
@@ -1106,11 +1151,46 @@ const openAsset = id => { const a = D.Assets.find(x => x.ID === id); tab = 'more
 const openFD = id => { tab = 'more'; sub = 'inv'; invKind = 'FD'; reorder = false; render(); window.scrollTo(0, 0); showFD(id); };
 const openSub = k => { tab = 'more'; sub = k; reorder = false; render(); window.scrollTo(0, 0); };
 const ovHead = (t, right) => `<div class="ov-h"><b>${t}</b><span>${right || ''}</span></div>`;
+const greetWord = () => { const h = new Date().getHours(); return h < 12 ? ['Good morning', '☀️'] : h < 17 ? ['Good afternoon', '🌤️'] : h < 21 ? ['Good evening', '🌆'] : ['Good night', '🌙']; };
+const banner = line => { const g = greetWord(), nm = getSet('UserName'), d = new Date().toLocaleDateString(undefined, {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'});
+  return `<div class="banner"><div class="bn-e">${g[1]}</div><div><div class="bn-hi">${g[0]}${nm ? ', ' + esc(nm) : ''}!</div><div class="bn-d">Today is ${d}</div>${line ? `<div class="bn-l">${line}</div>` : ''}</div></div>`; };
+const bannerLine = () => { const n = dueItems().length; return n ? `⏰ ${n} item${n > 1 ? 's need' : ' needs'} your attention` : 'Nice to see you again! Nothing is due soon ✨'; };
 const ovCol = () => new Set(String(getSet('OvCollapsed') || '').split(',').filter(Boolean));
 function toggleOv(k) { const c = ovCol(); if (c.has(k)) c.delete(k); else c.add(k); setSet('OvCollapsed', Array.from(c).join(',')); render(); }
 const ovSec = (k, c, ct, title, right, html) => { const off = ovCol().has(k);
-  return `<div class="ov-sec ${off ? 'col' : ''}" style="--c:${c};--ct:${ct}"><div class="ov-h" onclick="toggleOv('${k}')" style="cursor:pointer"><b><i class="car">▾</i>${title}</b><span>${right || ''}</span></div>${off ? '' : html}</div>`; };
+  return `<div class="ov-sec ${off ? 'col' : ''}" style="--c:${c};--ct:${ct}"><div class="ov-h" onclick="toggleOv('${k}')" style="cursor:pointer"><b><span class="ic">${{due: '⏰', sav: '💰', loan: '🤝', goal: '🎯', inv: '📈'}[k]}</span>${title}</b><span>${right || ''}<i class="car" style="margin:0 0 0 8px">▾</i></span></div>${off ? '' : html}</div>`; };
 
+/* ---------- due alerts when the app opens ---------- */
+const dueDaysSet = () => Math.max(0, +getSet('DueDays') || 3);
+function dueItems() {                                      // overdue and coming up within N days, most urgent first
+  const N = dueDaysSet(), out = [];
+  billsDue().filter(x => !x.done && x.days <= N).forEach(x => out.push({k: 'Bill', title: x.c.Name, sub: x.acct, amt: x.paid > 0 ? x.left : x.b, days: x.days, go: "go('ov')"}));
+  D.Loans.forEach(l => { const n = loanNext(l); if (n && daysTo(n.date) <= N) out.push({k: l.Direction === 'Lent' ? 'To receive' : 'To pay', title: l.Person, sub: n.inst ? 'Installment' : 'Loan due', amt: n.amt, days: daysTo(n.date), go: `openLoan('${l.ID}')`}); });
+  fds().filter(f => f.Closed !== 'Closed').forEach(f => { const c = fdCalc(f); if (c.mat && !c.matured && c.daysLeft <= N) out.push({k: 'Deposit', title: f.Name, sub: 'Fixed deposit matures', amt: c.P + (f.Payout && f.Payout !== 'At maturity' ? 0 : c.total), days: c.daysLeft, go: `openFD('${f.ID}')`}); });
+  return out.sort((a, b) => a.days - b.days);
+}
+function dueAlert(force) {
+  const mode = getSet('DuePopup') || 'daily';
+  if (!force && (mode === 'off' || M || $('#sheet').style.display === 'block')) return;
+  const items = dueItems(); if (!items.length) { if (force) alert('Nothing due in the next ' + dueDaysSet() + ' days.'); return; }
+  const day = today(); if (!force && mode === 'daily' && localStorage.getItem('mm_due') === day) return;
+  try { localStorage.setItem('mm_due', day); } catch (e) {}
+  M = null;
+  $('#sheet').innerHTML = `<h3>⏰ Due soon</h3>${items.map(i => `<div class="item row" onclick="closeM();${i.go}"><div><b>${esc(i.title)}</b><div class="mute" style="font-size:12px">${i.k} · ${esc(i.sub || '')}</div></div>
+      <div style="text-align:right"><b>${fmt(i.amt)}</b><br>${chipFor(i.days)}</div></div>`).join('')}
+    <div class="btns"><button class="btn" onclick="closeM();go('ov')">Open Overview</button><button class="btn ghost" onclick="closeM()">Close</button></div>`;
+  $('#bd').style.display = 'block'; $('#sheet').style.display = 'block';
+}
+function dueScreen() {
+  const opt = (key, v, label, cur) => `<button class="${String(cur) === String(v) ? 'on' : ''}" onclick="setSet('${key}','${v}');render()">${label}</button>`;
+  const d = dueDaysSet(), m = getSet('DuePopup') || 'daily';
+  return `<div class="back" onclick="sub='settings';render()">‹ Settings</div><h1>Due alerts</h1>
+  <div class="mute" style="margin-bottom:8px">Bills, loan installments and fixed deposit maturities that are overdue or coming up.</div>
+  <h2>Remind me when due within</h2><div class="seg">${[1, 3, 7, 14].map(n => opt('DueDays', n, n + (n === 1 ? ' day' : ' days'), d)).join('')}</div>
+  <h2>When I open the app</h2><div class="seg">${opt('DuePopup', 'daily', 'Once a day', m)}${opt('DuePopup', 'always', 'Every time', m)}${opt('DuePopup', 'off', 'Never', m)}</div>
+  <button class="btn ghost" onclick="dueAlert(true)">Show now</button>
+  <div class="mute" style="margin-top:10px;font-size:12px">A red number on the Overview tab always shows how many items need attention.</div>`;
+}
 function billsDue() {                                      // account budgets that have a due day
   const n = new Date(), ym = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0');
   return D.AccBudgets.filter(x => dueDay(x) && D.Categories.some(c => c.Type === 'Expense' && c.Name === x.Category)).map(x => {
@@ -1175,7 +1255,7 @@ function ov() {
   const invHtml = (held.length || fdc.length) ? `<div class="ov">${invBlock('Unit trusts', ut)}${invBlock('Shares', sh)}${fdBlock}</div>` : `<div class="ov"><div class="ov-hint">No investments held yet.</div></div>`;
 
   const dt = new Date().toLocaleDateString(undefined, {weekday: 'long', day: 'numeric', month: 'long'});
-  return `<h1>Overview</h1><div class="ov-date">${dt}</div>
+  return `${banner(bannerLine())}
   ${ovSec('due', '#ea580c', 'rgba(234,88,12,.13)', 'Due', open.length ? fmt(dueTotal) + ' to pay' : bills.length ? 'All paid ✓' : '', billsHtml)}
   ${ovSec('sav', '#0d9488', 'rgba(13,148,136,.13)', 'Savings', fmt(savTotal), savHtml)}
   ${ovSec('loan', '#2563eb', 'rgba(37,99,235,.13)', 'Loans', act.length ? 'Net ' + sgn(sum(lent, outstanding) - sum(owe, outstanding)) : '', loansHtml)}
@@ -1206,16 +1286,30 @@ function goals() {
 /* ----- More menu ----- */
 function animScreen() {
   const m = animMode(), opt = (k, name, d) => `<div class="card row" onclick="setSet('Anim','${k}');render()"><div><b>${name}</b><div class="mute">${d}</div></div><span class="${m === k ? 'inc' : 'mute'}">${m === k ? '✓' : ''}</span></div>`;
-  return `<div class="back" onclick="sub=null;render()">‹ More</div><h1>Animation</h1>
+  return `<div class="back" onclick="sub='settings';render()">‹ Settings</div><h1>Animation</h1>
   ${opt('off', 'Off', 'No motion at all')}${opt('subtle', 'Subtle', 'Soft fade when a screen opens')}${opt('smooth', 'Smooth', 'Screens slide in the direction you swipe, bars fill')}${opt('lively', 'Lively', 'Bouncy slide, items pop in one by one')}
   <div class="mute" style="margin-top:8px">Tip: swipe left or right on any screen to change tab. On Home, swipe the top card to change account.</div>`;
 }
+function settingsScreen() {
+  const row = (ic, name, line, on) => `<div class="card row" onclick="${on}"><div><b>${ic} ${name}</b><div class="mute">${line}</div></div><span class="mute">›</span></div>`;
+  const nm = getSet('UserName');
+  return `<div class="back" onclick="sub=null;render()">‹ More</div><h1>Settings</h1>
+  ${row('👤', 'Your name', nm ? esc(nm) : 'Shown in the greeting', 'editName()')}
+  ${row('↕', 'Tabs', 'Choose and reorder the bottom tabs', "sub='tabs';render();window.scrollTo(0,0)")}
+  ${row('⏰', 'Due alerts', 'Within ' + dueDaysSet() + ' days · ' + ({daily: 'once a day', always: 'every time', off: 'never'}[getSet('DuePopup') || 'daily']), "sub='due';render();window.scrollTo(0,0)")}
+  ${row('✨', 'Animation', {off: 'Off', subtle: 'Subtle', smooth: 'Smooth', lively: 'Lively'}[animMode()], "sub='anim';render();window.scrollTo(0,0)")}
+  ${typeof mmLockSettings === 'function' ? row('🔒', 'App lock', 'PIN and Face ID', 'mmLockSettings()') : ''}
+  ${typeof mmSettings === 'function' ? row('☁', 'Sync', 'Web App URL and access key. Tap to sync now', 'mmSettings()') : ''}`;
+}
+function editName() { openForm('Your name', 'x', [{k: 'Name', l: 'First name'}], {Name: getSet('UserName') || ''}, {noDelete: true, submit: o => { setSet('UserName', o.Name); render(); }}); }
 function more() {
   if (sub === 'goals') return goals();
   if (sub === 'loans') return loans();
   if (sub === 'inv') return inv();
   if (sub === 'tabs') return tabsScreen();
   if (sub === 'anim') return animScreen();
+  if (sub === 'settings') return settingsScreen();
+  if (sub === 'due') return dueScreen();
   const act = D.Loans.filter(l => outstanding(l) > 0.005);
   const lent = sum(act.filter(l => l.Direction === 'Lent'), outstanding), owe = sum(act.filter(l => l.Direction === 'Borrowed'), outstanding);
   const tile = (key, ic, name, line) => `<div class="card row" onclick="sub='${key}';render();window.scrollTo(0,0)"><div><b>${ic} ${name}</b><div class="mute">${line}</div></div><span class="mute">›</span></div>`;
@@ -1229,17 +1323,15 @@ function more() {
   const tiles = ord.map(k => moreEdit
     ? `<div class="card row dr" data-kind="more" data-group="m" data-id="${k}"><b>${items[k][0]} ${items[k][1]}</b><span class="grip">⠿</span></div>`
     : tile(k, items[k][0], items[k][1], items[k][2])).join('');
+  const hid = allTabs().filter(t => hiddenSet().has(t[0]));
   return `<div class="row"><h1>More</h1><span class="lnk" onclick="moreEdit=!moreEdit;render()">${moreEdit ? 'Done' : '↕ Reorder'}</span></div>
   <div>${tiles}</div>
-  ${tile('tabs', '↕', 'Tabs', 'Choose and reorder the bottom tabs')}
-  ${tile('anim', '✨', 'Animation', {off: 'Off', subtle: 'Subtle', smooth: 'Smooth', lively: 'Lively'}[animMode()])}
-  ${allTabs().filter(t => hiddenSet().has(t[0])).map(t => `<div class="card row" onclick="go('${t[0]}')"><div><b>${t[1]} ${t[2]}</b></div><span class="mute">›</span></div>`).join('')}
-  <div class="card row" onclick="mmLockSettings()"><div><b>🔒 App lock</b><div class="mute">PIN and Face ID</div></div><span class="mute">›</span></div>
-  <div class="card row" onclick="mmSettings()"><div><b>☁ Sync settings</b><div class="mute">Web App URL and access key. Tap to sync now.</div></div><span class="mute">›</span></div>`;
+  ${hid.length && !moreEdit ? `<div class="card"><div class="mute" style="font-size:12px;margin-bottom:8px">Other tabs</div><div class="chips">${hid.map(t => `<button class="chipbtn" onclick="go('${t[0]}')">${t[1]} ${t[2]}</button>`).join('')}</div></div>` : ''}
+  ${moreEdit ? '' : tile('settings', '⚙️', 'Settings', 'Name, tabs, alerts, animation' + (typeof mmLockSettings === 'function' ? ', lock, sync' : ''))}`;
 }
 function tabsScreen() {
   const L = allTabs(), h = hiddenSet();
-  return `<div class="back" onclick="sub=null;render()">‹ More</div><h1>Tabs</h1>
+  return `<div class="back" onclick="sub='settings';render()">‹ Settings</div><h1>Tabs</h1>
   <div class="mute" style="margin:-6px 0 12px">Tick the tabs to show in the bottom bar and drag ⠿ to reorder. Hidden tabs stay available in More. The first ticked tab is the one the app opens on.</div>
   <div class="card">${L.map(t => `<div class="item row dr" data-kind="tabs" data-group="t" data-id="${t[0]}"><label style="display:flex;align-items:center;gap:12px;flex:1"><input type="checkbox" style="width:20px;height:20px" ${h.has(t[0]) ? '' : 'checked'} ${t[0] === 'more' ? 'disabled' : ''} onchange="toggleTab('${t[0]}')"><b>${t[1]} ${t[2]}</b></label><span class="grip">⠿</span></div>`).join('')}</div>
   <button class="btn ghost" onclick="setSet('TabOrder','');setSet('HiddenTabs','');render()">Reset</button>`;
@@ -1684,6 +1776,24 @@ function editTx(id, type) {
     const a = calcVal('#f_Amount'), r = +$('#f_Rate').value || 0;
     if (a && r) $('#f_ToAmount').value = (curs()[0] === 'USD' ? a * r : a / r).toFixed(2);
   };
+  const updHint = () => {                                   // budget line under Category: green -> yellow -> orange -> red
+    const box = $('#bhint'); if (!box) return;
+    const ty = $('#f_Type').value, name = $('#f_Category').value, acct = $('#f_Account').value, selC = $('#f_Category');
+    const c = D.Categories.find(x => x.Name === name && (ty === 'Transfer' || x.Type === ty));
+    if (!c || name === '__all') { box.style.display = 'none'; selC.style.borderColor = ''; return; }
+    const ab = D.AccBudgets.find(x => x.Category === name && x.Account === acct), budget = ab ? +ab.Amount || 0 : (+c.Budget || 0);
+    box.style.display = 'block';
+    if (!budget) { box.innerHTML = '<div class="mute" style="font-size:12px">No budget set for this category.</div>'; selC.style.borderColor = ''; return; }
+    const ym = ($('#f_Date').value || today()).slice(0, 7), exp = c.Type === 'Expense';
+    const spent = sum(D.Transactions.filter(t => t.ID !== id && String(t.Date).slice(0, 7) === ym && t.Category === name && (exp ? isOut(t) : isInTag(t)) && (!ab || t.Account === acct || (!exp && t.ToAccount === acct))), val);
+    let amt = calcVal('#f_Amount'); if (cur(accByName(acct)) === 'USD') amt *= (+$('#f_Rate').value || sellRate());
+    const after = spent + amt, pct = after / budget * 100, left = budget - after;
+    const col = !exp ? 'var(--acc)' : pct >= 100 ? 'var(--warn)' : pct >= 80 ? '#ea580c' : pct >= 60 ? 'var(--soon)' : 'var(--inc)';
+    selC.style.borderColor = col;
+    box.innerHTML = `<div class="bh-bar"><i style="width:${Math.min(pct, 100).toFixed(0)}%;background:${col}"></i></div>
+      <div class="bh-t" style="color:${col}">${exp ? (pct >= 100 ? 'Over budget by ' + fmt(-left) : 'Left ' + fmt(left) + ' of ' + fmt(budget)) : 'Received ' + fmt(after) + ' of ' + fmt(budget)}
+      <span style="font-weight:400;opacity:.85"> · ${exp ? 'spent' : 'got'} ${fmt(spent)}${amt ? ' + ' + fmt(amt) : ''}</span></div>`;
+  };
   openForm(id ? 'Edit transaction' : 'New transaction', 'Transactions', [
     {k:'Type', l:'Type', t:'select', o:['Expense','Income','Transfer']},
     {k:'Account', l:'Account', t:'select', o:accs},
@@ -1716,6 +1826,7 @@ function editTx(id, type) {
           '</optgroup><optgroup label="Income">' + cats('Income').map(opt).join('') + '</optgroup>'
         : cats(ty).map(opt).join('')) + (restricted ? '<option value="__all">Show all categories…</option>' : '');
       show('Category', true);
+      updHint();
       label('Account', ty === 'Transfer' ? 'From account' : 'Account');
       label('Category', ty === 'Transfer' ? 'Budget category (optional, e.g. Saving)' : 'Category');
       show('ToAccount', ty === 'Transfer');
@@ -1741,6 +1852,9 @@ function editTx(id, type) {
     }
   });
   $('#f_Category').onchange = () => M.opts.onChange(false);
+  document.querySelector('[data-k=Category]').insertAdjacentHTML('afterend', '<div id="bhint" class="bhint" style="display:none"></div>');
+  $('#f_Amount').addEventListener('input', updHint); $('#f_Date').addEventListener('change', updHint); $('#f_Rate').addEventListener('input', updHint);
+  updHint();
   $('#f_Amount').addEventListener('input', () => { if (isCross()) recalcTo(); });
   $('#f_Rate').oninput = () => { M.rateAuto = false; if (isCross()) recalcTo(); };
   $('#f_ToAmount').oninput = () => {
