@@ -30,7 +30,7 @@
     FDs: ['ID','Name','Principal','Rate','StartDate','TermMonths','Payout','Account','Note','Closed'],
     BudgetLog: ['ID','Kind','Category','Account','Amount','From']
   };
-  const VER = 'v16';
+  const VER = 'v17';
   const LS = window.localStorage;
   const cfg = () => ({ url: LS.getItem('mm_url') || '', key: LS.getItem('mm_key') || '' });
   const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -126,13 +126,19 @@
   };
   const dropWhere = (name, key, val) => { T()[name] = T()[name].filter(r => r[key] !== val); };
   const nowYm = () => { const n = new Date(); return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0'); };
-  function logBudget(kind, cat, acct, oldA, newA, from) {      // budget history: a change applies from its month onward
-    oldA = +oldA || 0; newA = +newA || 0; if (oldA === newA) return;
-    from = /^\d{4}-\d{2}$/.test(from || '') ? from : nowYm();
-    const log = T().BudgetLog, same = log.filter(r => r.Kind === kind && r.Category === cat && String(r.Account || '') === String(acct || ''));
-    if (!same.length) log.push({ ID: newId(), Kind: kind, Category: cat, Account: acct || '', Amount: oldA, From: '0000-00' });
-    const hit = same.find(r => String(r.From).slice(0, 7) === from);
-    if (hit) hit.Amount = newA; else log.push({ ID: newId(), Kind: kind, Category: cat, Account: acct || '', Amount: newA, From: from });
+  const nextYm = ym => { const d = new Date(+ym.slice(0, 4), +ym.slice(5, 7), 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
+  const fm = r => String(r.From).slice(0, 7);
+  const effOf = (rows, ym) => { let v = null; rows.slice().sort((a, b) => fm(a) < fm(b) ? -1 : 1).forEach(r => { if (fm(r) <= ym) v = +r.Amount || 0; }); return v; };
+  const keyRows = (kind, cat, acct) => T().BudgetLog.filter(r => r.Kind === kind && r.Category === cat && String(r.Account || '') === String(acct || ''));
+  const effBudget = (kind, cat, acct, ym, fb) => { const v = effOf(keyRows(kind, cat, acct), ym); return v === null ? (+fb || 0) : v; };
+  function logBudget(kind, cat, acct, fallback, newAmt, from, single) {   // single: only that month changes; else from that month onward
+    fallback = +fallback || 0; newAmt = +newAmt || 0; from = /^\d{4}-\d{2}$/.test(from || '') ? from : nowYm();
+    const rows = keyRows(kind, cat, acct), eff = effOf(rows, from), cur0 = eff === null ? fallback : eff;
+    if (cur0 === newAmt) return;
+    const add = (f, a) => { const hit = rows.find(r => fm(r) === f); if (hit) hit.Amount = a; else { const r = { ID: newId(), Kind: kind, Category: cat, Account: acct || '', Amount: a, From: f }; T().BudgetLog.push(r); rows.push(r); } };
+    if (!rows.length) add('0000-00', fallback);
+    if (single) { const nx = nextYm(from); if (!rows.some(r => fm(r) === nx)) { const en = effOf(rows, nx), effNext = en === null ? fallback : en; if (effNext !== newAmt) add(nx, effNext); } }
+    add(from, newAmt);
   }
   const L = {
     save(name, o) { o.ID = o.ID || newId(); upsert(name, o); },
@@ -145,22 +151,34 @@
     },
     reorder(name, ids) { ids.forEach((id, k) => { const r = T()[name].find(x => x.ID === id); if (r) r.Order = k + 1; }); },
     saveCategory(o, from) {
-      o.ID = o.ID || newId();
-      const old = T().Categories.find(c => c.ID === o.ID);
-      const oldB = old ? +old.Budget || 0 : 0;
-      upsert('Categories', o);
-      logBudget('cat', o.Name, '', oldB, o.Budget, from);
+      o.ID = o.ID || newId();                                   // the id is shared with the queued call on purpose
+      const cur = nowYm(); from = /^\d{4}-\d{2}$/.test(from || '') ? from : cur;
+      const old = T().Categories.find(c => c.ID === o.ID), newB = +o.Budget || 0, row = Object.assign({}, o);
+      if (old) {
+        const oldB = +old.Budget || 0, changed = effBudget('cat', o.Name, '', from, oldB) !== newB, past = from < cur;
+        if (!changed || past) row.Budget = oldB;               // today's figure stays unless the change is for this month or later
+        upsert('Categories', row);
+        if (changed) logBudget('cat', o.Name, '', oldB, newB, from, past);
+      } else { upsert('Categories', row); logBudget('cat', o.Name, '', 0, newB, from, false); }
     },
     saveAccBudget(categoryId, account, amount, dueDay, from) {
       const cat = T().Categories.find(c => c.ID === categoryId); if (!cat) throw new Error('Category not found');
-      const oldCat = +cat.Budget || 0, oldRow = T().AccBudgets.find(r => r.Category === cat.Name && r.Account === account), oldAmt = oldRow ? +oldRow.Amount || 0 : 0;
-      T().AccBudgets = T().AccBudgets.filter(r => !(r.Category === cat.Name && r.Account === account));
+      const cur = nowYm(); from = /^\d{4}-\d{2}$/.test(from || '') ? from : cur;
       const amt = Number(amount) || 0;
       let dd = Math.round(Number(dueDay)) || 0; if (dd < 1 || dd > 31) dd = 0;
+      const oldCat = +cat.Budget || 0, oldRow = T().AccBudgets.find(r => r.Category === cat.Name && r.Account === account), oldAmt = oldRow ? +oldRow.Amount || 0 : 0;
+      if (from < cur && oldRow) {                                // an earlier month: change only that month
+        const effAcc = effBudget('acc', cat.Name, account, from, oldAmt), effCat = effBudget('cat', cat.Name, '', from, oldCat);
+        if (effAcc !== amt) { logBudget('acc', cat.Name, account, oldAmt, amt, from, true); logBudget('cat', cat.Name, '', oldCat, Math.max(0, effCat - effAcc + amt), from, true); }
+        if (dd !== (+oldRow.DueDay || 0)) oldRow.DueDay = dd || '';
+        return;
+      }
+      if (from < cur) from = cur;
+      T().AccBudgets = T().AccBudgets.filter(r => !(r.Category === cat.Name && r.Account === account));
       if (amt > 0 || dd > 0) T().AccBudgets.push({ ID: newId(), Category: cat.Name, Account: account, Amount: amt, DueDay: dd || '' });
       const total = T().AccBudgets.filter(r => r.Category === cat.Name).reduce((s, r) => s + (Number(r.Amount) || 0), 0);
-      logBudget('acc', cat.Name, account, oldAmt, amt, from);
-      if (total > 0) { cat.Budget = total; logBudget('cat', cat.Name, '', oldCat, total, from); }
+      logBudget('acc', cat.Name, account, oldAmt, amt, from, false);
+      if (total > 0) { cat.Budget = total; logBudget('cat', cat.Name, '', oldCat, total, from, false); }
     },
     addAsset(asset, opening) {
       asset.ID = asset.ID || newId();
@@ -530,8 +548,8 @@ body[data-anim="off"] .ov-r.today,body[data-anim="off"] .ov-sec .chip.pulse{anim
 body[data-anim="off"] .ov-r.today{background:rgba(234,88,12,.12)}
 .ov-sec .ov{background:linear-gradient(180deg,var(--ct),var(--card) 130px);border-color:var(--ct)}
 .ov-sec .ov-r{border-bottom-color:var(--ct);border-bottom-color:color-mix(in srgb,var(--c) 22%,transparent)}
-.qchips{-webkit-overflow-scrolling:touch;scroll-behavior:smooth;scroll-snap-type:x proximity;overscroll-behavior-x:contain;display:flex;gap:8px;overflow-x:auto;margin:10px -2px 2px;padding:2px;scrollbar-width:none}.qchips::-webkit-scrollbar{display:none}
-.qc{scroll-snap-align:center;flex:none;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:99px;padding:6px 13px;font-size:13.5px}
+.qchips{-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;display:flex;gap:8px;overflow-x:auto;margin:10px -2px 2px;padding:2px;scrollbar-width:none}.qchips::-webkit-scrollbar{display:none}
+.qc{flex:none;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:99px;padding:6px 13px;font-size:13.5px}
 .qc.on{background:var(--acc);color:#fff;border-color:var(--acc)}
 .reachlbl{font-size:12px;color:var(--mute);padding:12px 0 2px;border-top:1px dashed var(--line);margin-top:8px}
 @keyframes mm-cs-r{from{opacity:0;transform:translateX(70px) rotate(2.5deg)}to{opacity:1;transform:none}}
@@ -779,7 +797,7 @@ function render() {
   if (enter && animMode() !== 'off') { void a.offsetWidth; a.classList.add(slideDir > 0 ? 'inr' : slideDir < 0 ? 'inl' : 'in'); }
   if (swap && animMode() !== 'off') { const dir = slideDir < 0 ? 'l' : 'r'; Array.from(a.children).forEach(el => el.classList.add(el.matches('.swipe-acct, .swipe-bud') ? 'cs-' + dir : 'mm-fadein')); }
   slideDir = 0;
-  document.querySelectorAll('#app .qchips').forEach(c => { const on = c.querySelector('.qc.on'); if (on) c.scrollLeft = Math.max(0, on.offsetLeft - c.clientWidth / 2 + on.offsetWidth / 2); });   // keep the chosen account in view
+  document.querySelectorAll('#app .qchips').forEach(c => { const on = c.querySelector('.qc.on'); if (on && (on.offsetLeft < c.scrollLeft || on.offsetLeft + on.offsetWidth > c.scrollLeft + c.clientWidth)) c.scrollLeft = Math.max(0, on.offsetLeft - c.clientWidth / 2 + on.offsetWidth / 2); });   // only if the chosen account is out of view
 }
 function go(t) { tab = t; reorder = false; sub = null; stmtAcc = null; stmtFrom = null; moreEdit = false; render(); window.scrollTo(0, 0); }
 function shift(d) {
@@ -1759,13 +1777,15 @@ function editAcctBudget(catId, acct) {
   const ac = acct || budAcct;
   const c = D.Categories.find(x => x.ID === catId); if (!c || !ac) return;
   const ex = D.AccBudgets.find(x => x.Category === c.Name && x.Account === ac);
-  const others = sum(D.AccBudgets.filter(x => x.Category === c.Name && x.Account !== ac), x => x.Amount);
+  const others = sum(D.AccBudgets.filter(x => x.Category === c.Name && x.Account !== ac), x => accBud(c.Name, x.Account, month));
+  const thisAmt = ex ? accBud(c.Name, ac, month) : '';
+  const mName = new Date(+month.slice(0, 4), +month.slice(5, 7) - 1, 1).toLocaleString(undefined, {month: 'long', year: 'numeric'});
   openForm(esc(c.Name) + ' · ' + esc(ac), 'AccBudgets', [
     {k:'Amount', l:'Monthly budget for this account (LKR)', t:'number'},
     {k:'DueDay', l:'Due day of the month, 1–31 (optional, e.g. 18 for insurance). Shows in Overview', t:'number'}
-  ], {Amount: ex ? ex.Amount : '', DueDay: ex ? ex.DueDay : ''}, {
+  ], {Amount: thisAmt, DueDay: ex ? ex.DueDay : ''}, {
     noDelete: true,
-    extra: `<div class="mute" style="margin-bottom:12px">Other accounts: ${fmt(others)}<br>Category total after saving: <b id="abTot">${fmt(others + (ex ? +ex.Amount : 0))}</b><br>Leave amount and due day blank to remove this account's budget.</div>`,
+    extra: `<div class="mute" style="margin-bottom:12px">Other accounts: ${fmt(others)}<br>Category total after saving: <b id="abTot">${fmt(others + (+thisAmt || 0))}</b><br><b>${month < thisYm() ? 'Changes only ' + mName + '.' : 'Applies from ' + mName + ' onward.'}</b><br>Leave amount and due day blank to remove this account's budget.</div>`,
     submit: o => call('saveAccBudget', c.ID, ac, +o.Amount || 0, +o.DueDay || 0, month)
   });
   $('#f_Amount').oninput = () => { $('#abTot').textContent = fmt(others + (parseFloat($('#f_Amount').value) || 0)); };
@@ -2027,7 +2047,7 @@ function addToAcct() {                                       // add a category t
 }
 function editCat(id, forAcct) {
   const nid = forAcct ? rid() : '';
-  const v = id ? D.Categories.find(c => c.ID === id) : {Type: 'Expense'};
+  const v = id ? Object.assign({}, D.Categories.find(c => c.ID === id), {Budget: catBud(D.Categories.find(c => c.ID === id), month)}) : {Type: 'Expense'};
   const split = !!v.Name && D.AccBudgets.some(x => x.Category === v.Name);
   openForm(id ? 'Edit category' : 'New category', 'Categories', [
     {k:'Type', l:'Type', t:'select', o:['Expense','Income']},
