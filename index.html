@@ -30,7 +30,7 @@
     FDs: ['ID','Name','Principal','Rate','StartDate','TermMonths','Payout','Account','Note','Closed'],
     BudgetLog: ['ID','Kind','Category','Account','Amount','From']
   };
-  const VER = 'v15';
+  const VER = 'v16';
   const LS = window.localStorage;
   const cfg = () => ({ url: LS.getItem('mm_url') || '', key: LS.getItem('mm_key') || '' });
   const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -506,7 +506,7 @@ body[data-anim="lively"] nav button.on span{animation:mm-pop .4s cubic-bezier(.3
 .hero .big{font-size:30px;font-weight:700;margin:2px 0 8px}.hero .hsm{font-size:12.5px;opacity:.85}
 .hchips{display:flex;gap:6px;flex-wrap:wrap}.hchip{background:rgba(255,255,255,.17);border-radius:99px;padding:3px 10px;font-size:12px}
 .hero .lnk{color:#fff;opacity:.9;margin-left:0;margin-right:14px;text-decoration:underline}
-.ac-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:2px 14px;margin-bottom:12px}
+.ac-card{background:linear-gradient(180deg,var(--ct,transparent),var(--card) 90px);border:1px solid var(--ct,var(--line));border-top:4px solid var(--c,var(--line));border-radius:16px;padding:2px 14px;margin-bottom:12px}
 .ac-gh{display:flex;align-items:center;gap:12px;padding:12px 0 6px}.ac-gh b{flex:1;font-size:16px}.ac-gh .ac-tot{font-weight:700}
 .ac-r{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line)}.ac-r:last-child{border-bottom:0}
 .ac-ic{flex:none;width:38px;height:38px;border-radius:12px;background:var(--track);background:color-mix(in srgb,var(--t) 16%,transparent);display:flex;align-items:center;justify-content:center;font-size:19px}
@@ -516,8 +516,22 @@ body[data-anim="lively"] nav button.on span{animation:mm-pop .4s cubic-bezier(.3
 .actions{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .actions button{border:1px solid var(--line);background:var(--card);color:var(--acc);border-radius:14px;padding:12px 4px;font-size:14px;font-weight:600}
 .chips{display:flex;flex-wrap:wrap;gap:8px}.chipbtn{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:99px;padding:8px 14px;font-size:14px}
-.qchips{display:flex;gap:8px;overflow-x:auto;margin:10px -2px 2px;padding:2px;scrollbar-width:none}.qchips::-webkit-scrollbar{display:none}
-.qc{flex:none;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:99px;padding:6px 13px;font-size:13.5px}
+:root{--dim:rgba(0,0,0,.45)}
+#duepop{position:fixed;inset:0;z-index:120;background:var(--dim);display:flex;align-items:center;justify-content:center;padding:26px;animation:mm-fi .2s ease-out}
+.dp{background:var(--card);color:var(--ink);border-radius:20px;padding:16px 18px;max-width:380px;width:100%;max-height:70vh;overflow:auto;box-shadow:0 12px 44px rgba(0,0,0,.35);animation:mm-dp .25s cubic-bezier(.2,.9,.3,1.2)}
+.dph{font-size:18px;font-weight:700;margin-bottom:4px}
+.dpr{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line);cursor:pointer}
+@keyframes mm-dp{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:none}}
+.ov-r.today{border-radius:10px;margin:0 -8px;padding-left:8px;padding-right:8px;animation:mm-blink 1.5s ease-in-out infinite}
+@keyframes mm-blink{0%,100%{background:rgba(234,88,12,.04)}50%{background:rgba(234,88,12,.2)}}
+@keyframes mm-pulse{0%{box-shadow:0 0 0 0 rgba(234,88,12,.55)}70%{box-shadow:0 0 0 9px rgba(234,88,12,0)}100%{box-shadow:0 0 0 0 rgba(234,88,12,0)}}
+.ov-sec .chip.pulse{animation:mm-pulse 1.5s ease-out infinite}
+body[data-anim="off"] .ov-r.today,body[data-anim="off"] .ov-sec .chip.pulse{animation:none}
+body[data-anim="off"] .ov-r.today{background:rgba(234,88,12,.12)}
+.ov-sec .ov{background:linear-gradient(180deg,var(--ct),var(--card) 130px);border-color:var(--ct)}
+.ov-sec .ov-r{border-bottom-color:var(--ct);border-bottom-color:color-mix(in srgb,var(--c) 22%,transparent)}
+.qchips{-webkit-overflow-scrolling:touch;scroll-behavior:smooth;scroll-snap-type:x proximity;overscroll-behavior-x:contain;display:flex;gap:8px;overflow-x:auto;margin:10px -2px 2px;padding:2px;scrollbar-width:none}.qchips::-webkit-scrollbar{display:none}
+.qc{scroll-snap-align:center;flex:none;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:99px;padding:6px 13px;font-size:13.5px}
 .qc.on{background:var(--acc);color:#fff;border-color:var(--acc)}
 .reachlbl{font-size:12px;color:var(--mute);padding:12px 0 2px;border-top:1px dashed var(--line);margin-top:8px}
 @keyframes mm-cs-r{from{opacity:0;transform:translateX(70px) rotate(2.5deg)}to{opacity:1;transform:none}}
@@ -720,7 +734,11 @@ const setSet = (id, value) => {            // saved in the Settings sheet, appli
   google.script.run.withFailureHandler(e => alert('Could not save: ' + e.message)).save('Settings', {ID: id, Value: value});
 };
 // Home dropdown: only Savings accounts (falls back to all real accounts if none is typed 'Savings')
-const homeList = () => { const s = leafList().filter(a => a.Type === 'Savings'); return s.length ? s : leafList(); };
+const homeList = () => {                                   // Savings accounts in the order chosen with drag (HomeOrder)
+  let s = leafList().filter(a => a.Type === 'Savings'); if (!s.length) s = leafList();
+  const ord = String(getSet('HomeOrder') || '').split(',');
+  return s.slice().sort((a, b) => { const x = ord.indexOf(a.ID), y = ord.indexOf(b.ID); return (x < 0 ? 999 : x) - (y < 0 ? 999 : y); });
+};
 const defAcct = () => { const n = getSet('HomeAccount'); return n && homeList().some(a => a.Name === n) ? n : ''; };
 const groupNames = a => { const s = new Set([a.Name]); const walk = x => kids(x).forEach(k => { s.add(k.Name); walk(k); }); walk(a); return s; };
 const totalLkr = a => own(a) * rateOf(cur(a)) + sum(kids(a), totalLkr);
@@ -804,8 +822,13 @@ function pickAcct() {
   $('#sheet').innerHTML = '<h3>Show account</h3><div class="mute" style="margin-bottom:6px">Savings accounts only. Tap ☆ to make one the default the app opens on.</div>' + HOME_OPTS.map((n, i) =>
     `<div class="item row" onclick="setHomeAcct(${i})"><span>${esc(i ? accLabel(accByName(n)) : 'All accounts')}${n === homeAcct ? ' <b class="inc">✓</b>' : ''}</span>
       <span class="star" onclick="event.stopPropagation();makeDefault(${i})">${n === dn ? '★' : '☆'}</span></div>`).join('') +
-    '<div class="btns"><button class="btn ghost" onclick="closeM()">Close</button></div>';
+    '<div class="btns"><button class="btn ghost" onclick="reorderHomeAccts()">↕ Reorder accounts</button><button class="btn ghost" onclick="closeM()">Close</button></div>';
   $('#bd').style.display = 'block'; $('#sheet').style.display = 'block';
+}
+function reorderHomeAccts() {
+  $('#sheet').innerHTML = '<h3>Reorder accounts</h3><div class="mute" style="margin-bottom:6px">Drag ⠿ to change the order of the account buttons on Home.</div><div>' +
+    homeList().map(a => `<div class="item row dr" data-kind="homeacc" data-group="h" data-id="${a.ID}"><span>${esc(accLabel(a))}</span><span class="grip">⠿</span></div>`).join('') +
+    '</div><div class="btns"><button class="btn" onclick="closeM();render()">Done</button></div>';
 }
 function setHomeAcct(i) { homeAcct = HOME_OPTS[i] || ''; closeM(); render(); }
 function makeDefault(i) { const n = HOME_OPTS[i] || ''; setSet('HomeAccount', n); homeAcct = n; closeM(); render(); }
@@ -834,7 +857,7 @@ document.addEventListener('touchend', e => {
   if (!sw) return; const s0 = sw; sw = null;
   const t = e.changedTouches[0], dx = t.clientX - s0.x, dy = t.clientY - s0.y;
   if (Math.abs(dx) < 70 || Math.abs(dy) > Math.abs(dx) * 0.6 || Date.now() - s0.t > 800 || s0.x < 24) return;
-  if ($('#sheet').style.display === 'block' || (typeof DR !== 'undefined' && DR)) return;
+  if ($('#sheet').style.display === 'block' || document.getElementById('duepop') || (typeof DR !== 'undefined' && DR)) return;
   if (s0.el.closest && s0.el.closest('input,select,textarea,.grip,.seg,#sheet,#bd,nav,.dr,.qchips')) return;
   if (tab === 'home' && !sub && s0.el.closest('.swipe-acct')) swipeAcct(dx < 0 ? 1 : -1); else if (tab === 'budget' && s0.el.closest('.swipe-bud')) swipeBud(dx < 0 ? 1 : -1); else swipeTab(dx < 0 ? 1 : -1);
 });
@@ -1045,6 +1068,7 @@ const endDrag = () => {
   d.el.classList.remove('dragging');
   const ids = Array.from(d.parent.children).filter(x => x.classList.contains('dr') && x.dataset.group === d.group).map(x => x.dataset.id);
   if (d.kind === 'tabs') { setSet('TabOrder', ids.join(',')); render(); return; }
+  if (d.kind === 'homeacc') { setSet('HomeOrder', ids.join(',')); render(); return; }
   if (d.kind === 'more') { setSet('MoreOrder', ids.join(',')); render(); return; }
   const list = d.kind === 'Categories' ? D.Categories : D.Accounts;
   ids.forEach((id, k) => { const x = list.find(y => y.ID === id); if (x) x.Order = k + 1; });
@@ -1065,14 +1089,14 @@ function budget() {
   if (budAcct && !leaves.some(x => x.Name === budAcct)) budAcct = '';
   const bdef = getSet('BudgetAccount') || '';
   const bo = [''].concat(leaves.map(x => x.Name)), bat = Math.max(0, bo.indexOf(budAcct));
-  const sel = `<div class="swipe-bud"><div class="row" style="gap:8px;align-items:center"><select class="acctsel" style="flex:1" onchange="budAcct=this.value;reorder=false;render()">
-    <option value="">All accounts</option>${leaves.map(a => `<option value="${esc(a.Name)}" ${a.Name === budAcct ? 'selected' : ''}>${esc(accLabel(a))}</option>`).join('')}</select>
-    <span class="star" title="Open the Budget tab on this account" onclick="toggleBudDef()">${bdef === budAcct ? '★' : '☆'}</span></div>
-    <div class="mute" style="margin:2px 0 8px;font-size:12px">${bdef ? '★ Default: ' + esc(bdef) : 'Tap ☆ to make the selected account the default for this tab. Swipe to switch account.'}</div>
+  const sel = `<div class="swipe-bud"><div class="row" style="align-items:flex-start"><div><h1 style="margin:0">Budget</h1>
+      <div class="mute" style="margin:2px 0 4px">${budAcct ? esc(acctFull(budAcct)) : 'All accounts'}</div></div>
+      <span class="star" title="${bdef === budAcct ? 'Default account for this tab' : 'Make this the default account for this tab'}" onclick="toggleBudDef()">${bdef === budAcct ? '★' : '☆'}</span></div>
+    ${monthBar()}
     ${bo.length > 1 ? `<div class="qchips" style="margin-bottom:8px">${bo.map(n => `<button class="qc ${n === (budAcct || '') ? 'on' : ''}" data-n="${esc(n)}" onclick="pickBudQuick(this.dataset.n)">${n === '' ? 'All' : (n === bdef ? '★ ' : '') + esc(n)}</button>`).join('')}</div>` : ''}</div>`;
   const ex = D.Categories.filter(c => c.Type === 'Expense'), inc = D.Categories.filter(c => c.Type === 'Income');
   if (budAcct) {                                           // budget of one account
-    const amt = c => accBud(c.Name, budAcct, thisYm());
+    const amt = c => accBud(c.Name, budAcct, month);
     const linked = c => D.AccBudgets.some(x => x.Account === budAcct && x.Category === c.Name);
     const exL = ex.filter(linked), incL = inc.filter(linked);               // only the categories added to this account
     const rows = l => l.map(c => { const v = amt(c);
@@ -1084,17 +1108,17 @@ function budget() {
     return `${sel}${reorder ? '<div class="mute" style="margin:0 0 10px">Drag ⠿ to change the order. It is used everywhere in the app.</div>' : head3(bi, be)}
     <h2>Expense categories</h2><div class="card tight">${rows(exL)}</div>
     <h2>Income categories</h2><div class="card tight">${rows(incL)}</div>
-    ${reorder ? '' : `<div class="mute">Budget categories of ${esc(budAcct)} only. A change applies from this month on; past months keep their old budget. Tap a category to set its budget and due day.</div>`}
+    ${reorder ? '' : `<div class="mute">Budget categories of ${esc(budAcct)} only. A change applies from the month shown, onward; earlier months keep their old budget. Tap a category to set its budget and due day.</div>`}
     <div class="btns">${reorder ? '<button class="btn" onclick="reorder=false;render()">Done</button>'
       : '<button class="btn" onclick="addToAcct()">Add category</button><button class="btn ghost" onclick="reorder=true;render()">↕ Reorder categories</button>'}</div>`;
   }
-  const be = sum(ex, c => catBud(c, thisYm())), bi = sum(inc, c => catBud(c, thisYm()));
+  const be = sum(ex, c => catBud(c, month)), bi = sum(inc, c => catBud(c, month));
   const rows = l => l.map((c, i) => reorder
     ? dragCat(c)
-    : budRow(c, `<span>${fmt(catBud(c, thisYm()))}</span>`, D.AccBudgets.some(x => x.Category === c.Name) ? ' <span class="mute">· by account</span>' : '', `editCat('${c.ID}')`)).join('')
+    : budRow(c, `<span>${fmt(catBud(c, month))}</span>`, D.AccBudgets.some(x => x.Category === c.Name) ? ' <span class="mute">· by account</span>' : '', `editCat('${c.ID}')`)).join('')
     || '<div class="mute">None yet</div>';
   return `${sel}
-  <div class="mute" style="margin:0 0 10px">${reorder ? 'Drag ⠿ to change the order. It is used everywhere in the app.' : 'Monthly budget in LKR. A change applies from this month on; past months keep their old budget. Pick an account to budget per account.'}</div>
+  <div class="mute" style="margin:0 0 10px">${reorder ? 'Drag ⠿ to change the order. It is used everywhere in the app.' : 'Monthly budget in LKR. A change applies from the month shown, onward; earlier months keep their old budget.'}</div>
   ${reorder ? '' : head3(bi, be)}
   <h2>Expense categories</h2><div class="card tight">${rows(ex)}</div>
   <h2>Income categories</h2><div class="card tight">${rows(inc)}</div>
@@ -1151,9 +1175,10 @@ function statement() {
 }
 const accIc = a => ({Cash: '💵', Bank: '🏦', Card: '💳', Savings: '🐷', Investment: '📈', Other: '🧾'}[a.Type] || '🏦');
 const accTint = a => ({Cash: '#16a34a', Bank: '#2563eb', Card: '#c026d3', Savings: '#0d9488', Investment: '#4f46e5', Other: '#6b7280'}[a.Type] || '#2563eb');
-function accRow(a, nested) {
+const BANKCOL = [['#2563eb', 'rgba(37,99,235,.13)'], ['#0d9488', 'rgba(13,148,136,.13)'], ['#c026d3', 'rgba(192,38,211,.13)'], ['#ea580c', 'rgba(234,88,12,.13)'], ['#16a34a', 'rgba(22,163,74,.13)'], ['#4f46e5', 'rgba(79,70,229,.13)'], ['#db2777', 'rgba(219,39,119,.13)'], ['#ca8a04', 'rgba(202,138,4,.15)']];
+function accRow(a, nested, col) {
   const c = cur(a), t = own(a), tg = +a.Target || 0;
-  return `<div class="ac-r ${nested ? 'nest' : ''}" onclick="openStmt('${a.ID}')"><span class="ac-ic" style="--t:${accTint(a)}">${accIc(a)}</span>
+  return `<div class="ac-r ${nested ? 'nest' : ''}" onclick="openStmt('${a.ID}')"><span class="ac-ic" style="--t:${col || accTint(a)}">${accIc(a)}</span>
     <div class="ac-n"><b>${esc(a.Name)}</b><small>${esc(a.Type || '')}${c === 'USD' ? ' · USD' : ''}</small></div>
     <div class="ac-b"><b class="${t < 0 ? 'warn' : ''}">${c === 'USD' ? fmtC(t, 'USD') : num(t)}</b>${c === 'USD' ? `<small>≈ ${num(t * rateOf('USD'))}</small>` : ''}</div></div>
     ${tg > 0 ? `<div style="padding:0 0 10px 50px"><div class="row mute" style="font-size:12px"><span>Target ${num(tg)}</span><span>${Math.max(0, t / tg * 100).toFixed(0)}%</span></div>${progress(t, tg, 'thin')}</div>` : ''}`;
@@ -1166,18 +1191,18 @@ function acc() {
   const byType = {};
   leafList().forEach(a => { const k = a.Type || 'Other'; byType[k] = (byType[k] || 0) + own(a) * rateOf(cur(a)); });
   const flat = a => kids(a).reduce((r, k) => r.concat([k], flat(k)), []);
-  const group = a => {
-    const ks = flat(a);
-    if (!ks.length) return `<div class="ac-card">${accRow(a)}</div>`;
+  const group = (a, gi) => {
+    const col = BANKCOL[gi % BANKCOL.length], st = `--c:${col[0]};--ct:${col[1]}`, ks = flat(a);
+    if (!ks.length) return `<div class="ac-card" style="${st}">${accRow(a, false, col[0])}</div>`;
     const ownBal = (+a.Opening || 0) !== 0 || entries(a).length;
-    return `<div class="ac-card"><div class="ac-gh" onclick="openStmt('${a.ID}')"><span class="ac-ic" style="--t:${accTint(a)}">${accIc(a)}</span><b>${esc(a.Name)}</b><span class="ac-tot">${fmt(totalLkr(a))}</span></div>
-      ${ownBal ? accRow(a, true) : ''}${ks.map(k => accRow(k, true)).join('')}</div>`;
+    return `<div class="ac-card" style="${st}"><div class="ac-gh" onclick="openStmt('${a.ID}')"><span class="ac-ic" style="--t:${col[0]}">${accIc(a)}</span><b style="color:${col[0]}">${esc(a.Name)}</b><span class="ac-tot">${fmt(totalLkr(a))}</span></div>
+      ${ownBal ? accRow(a, true, col[0]) : ''}${ks.map(k => accRow(k, true, col[0])).join('')}</div>`;
   };
   return `<div class="hero"><div class="hsm">Net worth</div><div class="big">${fmt(sum(roots(), totalLkr))}</div>
     <div class="hchips">${Object.keys(byType).map(k => `<span class="hchip">${accIc({Type: k})} ${esc(k)} ${short(byType[k])}</span>`).join('')}</div>
     <div class="hsm" style="margin-top:10px">USD buy ${n2(buyRate())} · sell ${n2(sellRate())}${lr ? ' · ' + esc(lr.Date) : ''}</div>
     <div style="margin-top:4px"><span class="lnk" onclick="editRates()">Update rate</span><span class="lnk" onclick="showRates()">History</span></div></div>
-  ${roots().length ? roots().map(group).join('') : '<div class="empty">No accounts yet.</div>'}
+  ${roots().length ? roots().map((a, i) => group(a, i)).join('') : '<div class="empty">No accounts yet.</div>'}
   <div class="actions"><button onclick="editAcc()">＋ Account</button><button onclick="editTx(null,'Transfer')">⇄ Transfer</button><button onclick="reorder=true;render()">↕ Reorder</button></div>`;
 }
 
@@ -1190,7 +1215,7 @@ const parseD = str => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(str || 
 const daysTo = d => Math.round((midnight(d) - midnight(new Date())) / 864e5);
 const dueIn = (y, m, day) => new Date(y, m, Math.min(day, new Date(y, m + 1, 0).getDate()));   // 31st in a short month = last day
 const when = n => n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : n > 1 ? 'in ' + n + ' days' : (n === -1 ? '1 day overdue' : -n + ' days overdue');
-const chipFor = n => `<span class="chip ${n < 0 ? 'bad' : n <= 3 ? 'soon' : ''}">${when(n)}</span>`;
+const chipFor = n => `<span class="chip ${n < 0 ? 'bad' : n <= 3 ? 'soon' : ''} ${n === 0 ? 'pulse' : ''}">${when(n)}</span>`;
 const shortDate = d => d.toLocaleString(undefined, {day: 'numeric', month: 'short'});
 const openLoan = id => { tab = 'more'; sub = 'loans'; reorder = false; render(); window.scrollTo(0, 0); showLoan(id); };
 const openAsset = id => { const a = D.Assets.find(x => x.ID === id); tab = 'more'; sub = 'inv'; invKind = a ? a.Kind : invKind; reorder = false; render(); window.scrollTo(0, 0); showAsset(id); };
@@ -1215,17 +1240,18 @@ function dueItems() {                                      // overdue and coming
   fds().filter(f => f.Closed !== 'Closed').forEach(f => { const c = fdCalc(f); if (c.mat && !c.matured && c.daysLeft <= N) out.push({k: 'Deposit', title: f.Name, sub: 'Fixed deposit matures', amt: c.P + (f.Payout && f.Payout !== 'At maturity' ? 0 : c.total), days: c.daysLeft, go: `openFD('${f.ID}')`}); });
   return out.sort((a, b) => a.days - b.days);
 }
+function closeDue() { const e = document.getElementById('duepop'); if (e) e.remove(); }
 function dueAlert(force) {
   const mode = getSet('DuePopup') || 'daily';
   if (!force && (mode === 'off' || M || $('#sheet').style.display === 'block')) return;
   const items = dueItems(); if (!items.length) { if (force) alert('Nothing due in the next ' + dueDaysSet() + ' days.'); return; }
   const day = today(); if (!force && mode === 'daily' && localStorage.getItem('mm_due') === day) return;
   try { localStorage.setItem('mm_due', day); } catch (e) {}
-  M = null;
-  $('#sheet').innerHTML = `<h3>⏰ Due soon</h3>${items.map(i => `<div class="item row" onclick="closeM();${i.go}"><div><b>${esc(i.title)}</b><div class="mute" style="font-size:12px">${i.k} · ${esc(i.sub || '')}</div></div>
-      <div style="text-align:right"><b>${fmt(i.amt)}</b><br>${chipFor(i.days)}</div></div>`).join('')}
-    <div class="btns"><button class="btn" onclick="closeM();go('ov')">Open Overview</button><button class="btn ghost" onclick="closeM()">Close</button></div>`;
-  $('#bd').style.display = 'block'; $('#sheet').style.display = 'block';
+  closeDue();
+  const w = document.createElement('div'); w.id = 'duepop'; w.onclick = closeDue;              // tap anywhere outside the card to close
+  w.innerHTML = `<div class="dp" onclick="event.stopPropagation()"><div class="dph">⏰ Due soon</div>${items.map(i => `<div class="dpr" onclick="closeDue();${i.go}"><div style="min-width:0"><b>${esc(i.title)}</b><div class="mute" style="font-size:12px">${i.k} · ${esc(i.sub || '')}</div></div>
+      <div style="text-align:right;white-space:nowrap"><b>${fmt(i.amt)}</b><br>${chipFor(i.days)}</div></div>`).join('')}</div>`;
+  document.body.appendChild(w);
 }
 function dueScreen() {
   const opt = (key, v, label, cur) => `<button class="${String(cur) === String(v) ? 'on' : ''}" onclick="setSet('${key}','${v}');render()">${label}</button>`;
@@ -1240,7 +1266,7 @@ function dueScreen() {
 function billsDue() {                                      // account budgets that have a due day
   const n = new Date(), ym = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0');
   return D.AccBudgets.filter(x => dueDay(x) && D.Categories.some(c => c.Type === 'Expense' && c.Name === x.Category)).map(x => {
-    const b = +x.Amount || 0;
+    const b = accBud(x.Category, x.Account, thisYm());
     const paid = sum(D.Transactions.filter(t => isOut(t) && t.Category === x.Category && t.Account === x.Account && String(t.Date).slice(0, 7) === ym), val);
     const done = b > 0 ? paid >= b - 0.5 : paid > 0;
     const due = dueIn(n.getFullYear(), n.getMonth(), dueDay(x));
@@ -1253,7 +1279,7 @@ function ov() {
   const bills = billsDue();
   const open = bills.filter(x => !x.done).sort((a, b) => a.days - b.days);
   const done = bills.filter(x => x.done).sort((a, b) => a.next - b.next);
-  const billRow = x => `<div class="ov-r" onclick="editTx('', 'Expense')" style="cursor:pointer"><div class="l"><b>${esc(x.c.Name)}</b><small>${esc(acctFull(x.acct))} · ${dueDay(x.c)}${th(dueDay(x.c))} of each month${x.paid > 0 ? ' · paid ' + fmt(x.paid) : ''}</small></div>
+  const billRow = x => `<div class="ov-r ${x.days === 0 ? 'today' : ''}" onclick="editTx('', 'Expense')" style="cursor:pointer"><div class="l"><b>${esc(x.c.Name)}</b><small>${esc(acctFull(x.acct))} · ${dueDay(x.c)}${th(dueDay(x.c))} of each month${x.paid > 0 ? ' · paid ' + fmt(x.paid) : ''}</small></div>
     <div class="rt"><b>${x.b ? fmt(x.paid > 0 ? x.left : x.b) : ''}</b><br>${chipFor(x.days)}</div></div>`;
   const doneRow = x => `<div class="ov-r"><div class="l"><b>${esc(x.c.Name)}</b><small>${esc(acctFull(x.acct))} · next ${shortDate(x.next)}</small></div><div class="rt"><span class="chip ok">✓ Paid</span></div></div>`;
   const dueTotal = sum(open, x => x.b ? (x.paid > 0 ? x.left : x.b) : 0);
@@ -1273,7 +1299,7 @@ function ov() {
   const dueKey = l => { const n = loanNext(l); return n ? n.date.getTime() : 9e15; };
   const byDue = (a, b) => dueKey(a) - dueKey(b);
   const loanRow = l => { const nx = loanNext(l), d = nx && nx.date;
-    return `<div class="ov-r" onclick="openLoan('${l.ID}')" style="cursor:pointer"><div class="l"><b>${esc(l.Person)}</b><small>${nx ? (nx.inst ? 'Installment ' + fmt(nx.amt) + ' · ' : 'Due ') + shortDate(d) : 'No due date'}${+l.Rate > 0 ? ' · ' + n2(l.Rate) + '%' : ''}</small></div>
+    return `<div class="ov-r ${d && daysTo(d) === 0 ? 'today' : ''}" onclick="openLoan('${l.ID}')" style="cursor:pointer"><div class="l"><b>${esc(l.Person)}</b><small>${nx ? (nx.inst ? 'Installment ' + fmt(nx.amt) + ' · ' : 'Due ') + shortDate(d) : 'No due date'}${+l.Rate > 0 ? ' · ' + n2(l.Rate) + '%' : ''}</small></div>
       <div class="rt"><b>${fmt(outstanding(l))}</b>${d ? '<br>' + chipFor(daysTo(d)) : ''}</div></div>`; };
   const lent = act.filter(l => l.Direction === 'Lent').sort(byDue), owe = act.filter(l => l.Direction === 'Borrowed').sort(byDue);
   const loanBlock = (title, list, cls) => list.length ? `<div class="ov-sub"><span>${title}</span><b class="${cls}">${fmt(sum(list, outstanding))}</b></div>${list.map(loanRow).join('')}` : '';
@@ -1740,7 +1766,7 @@ function editAcctBudget(catId, acct) {
   ], {Amount: ex ? ex.Amount : '', DueDay: ex ? ex.DueDay : ''}, {
     noDelete: true,
     extra: `<div class="mute" style="margin-bottom:12px">Other accounts: ${fmt(others)}<br>Category total after saving: <b id="abTot">${fmt(others + (ex ? +ex.Amount : 0))}</b><br>Leave amount and due day blank to remove this account's budget.</div>`,
-    submit: o => call('saveAccBudget', c.ID, ac, +o.Amount || 0, +o.DueDay || 0, thisYm())
+    submit: o => call('saveAccBudget', c.ID, ac, +o.Amount || 0, +o.DueDay || 0, month)
   });
   $('#f_Amount').oninput = () => { $('#abTot').textContent = fmt(others + (parseFloat($('#f_Amount').value) || 0)); };
 }
@@ -2007,7 +2033,7 @@ function editCat(id, forAcct) {
     {k:'Type', l:'Type', t:'select', o:['Expense','Income']},
     {k:'Name', l:'Name', req:true},
     {k:'Budget', l: split ? 'Monthly budget in LKR (total of its account budgets; change them in Budget)' : 'Monthly budget in LKR (income: monthly target)', t:'number', ro: split}
-  ], v, Object.assign({submit: o => call('saveCategory', o, thisYm())}, forAcct ? {noDelete: true, prep: o => { o.ID = nid; }, reopen: 'acctbud:' + nid} : {}));
+  ], v, Object.assign({submit: o => call('saveCategory', o, month)}, forAcct ? {noDelete: true, prep: o => { o.ID = nid; }, reopen: 'acctbud:' + nid} : {}));
 }
 function editAcc(id) {
   const v = id ? D.Accounts.find(a => a.ID === id) : {Type: 'Bank', Currency: 'LKR'};
