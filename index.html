@@ -15,22 +15,24 @@
    - queues changes and sends them to your Google Sheet when online */
 (function () {
   const H = {
-    Categories: ['ID','Type','Name','Budget','Order'],
-    Accounts: ['ID','Name','Parent','Type','Opening','Currency','Target','Order'],
+    Categories: ['ID','Type','Name','Budget','Order','LoanID','CardID'],
+    Accounts: ['ID','Name','Parent','Type','Opening','Currency','Target','Order','Limit','StmtDay','PayDay'],
     Transactions: ['ID','Date','Type','Category','Account','ToAccount','Amount','Note','Rate','ToAmount','Photo'],
     Goals: ['ID','Name','Target','Saved','TargetDate','Account'],
     Settings: ['ID','Value'],
     Rates: ['ID','Date','Buy','Sell'],
-    Loans: ['ID','Person','Direction','Amount','Date','DueDate','Account','Note','Rate','Installment','Freq','FirstInst'],
-    LoanPayments: ['ID','LoanID','Date','Amount','Account','Note'],
+    Loans: ['ID','Person','Direction','Amount','Date','DueDate','Account','Note','Rate','Installment','Freq','FirstInst','LoanType'],
+    LoanPayments: ['ID','LoanID','Date','Amount','Account','Note','TxID'],
     AccBudgets: ['ID','Category','Account','Amount','DueDay'],
     Assets: ['ID','Kind','Name','Code'],
     InvTx: ['ID','AssetID','Date','Type','Units','Price','Fees','Amount','Account','Note'],
     Prices: ['ID','AssetID','Date','Price'],
     FDs: ['ID','Name','Principal','Rate','StartDate','TermMonths','Payout','Account','Note','Closed'],
-    BudgetLog: ['ID','Kind','Category','Account','Amount','From']
+    BudgetLog: ['ID','Kind','Category','Account','Amount','From'],
+    CardPay: ['ID','Card','Date','Amount','TxID','Note'],
+    CardPlans: ['ID','Card','Item','Total','Months','Start','Note','Closed']
   };
-  const VER = 'v18';
+  const VER = 'v19';
   const LS = window.localStorage;
   const cfg = () => ({ url: LS.getItem('mm_url') || '', key: LS.getItem('mm_key') || '' });
   const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -145,11 +147,19 @@
     remove(name, id) {
       const row = T()[name].find(r => r.ID === id);
       if (name === 'Transactions' && row && String(row.Photo).indexOf('pending-') === 0) cancelPhoto(row.Photo);
+      if (name === 'Transactions') { dropWhere('LoanPayments', 'TxID', id); dropWhere('CardPay', 'TxID', id); }
       dropWhere(name, 'ID', id);
       if (name === 'Loans') dropWhere('LoanPayments', 'LoanID', id);
       if (name === 'Assets') { dropWhere('InvTx', 'AssetID', id); dropWhere('Prices', 'AssetID', id); }
     },
     reorder(name, ids) { ids.forEach((id, k) => { const r = T()[name].find(x => x.ID === id); if (r) r.Order = k + 1; }); },
+    saveTransaction(o, links) {
+      o.ID = o.ID || newId(); links = links || {};
+      upsert('Transactions', Object.assign({}, o));
+      dropWhere('LoanPayments', 'ID', 'lp' + o.ID); dropWhere('CardPay', 'ID', 'cp' + o.ID);
+      if (links.loan) upsert('LoanPayments', { ID: 'lp' + o.ID, LoanID: links.loan.id, Date: o.Date, Amount: Number(links.loan.lkr) || 0, Account: '', Note: o.Note || 'Paid from expense', TxID: o.ID });
+      if (links.card) upsert('CardPay', { ID: 'cp' + o.ID, Card: links.card.name, Date: o.Date, Amount: Number(links.card.amt) || 0, TxID: o.ID, Note: o.Note || 'Payment' });
+    },
     saveCategory(o, from) {
       o.ID = o.ID || newId();                                   // the id is shared with the queued call on purpose
       const cur = nowYm(); from = /^\d{4}-\d{2}$/.test(from || '') ? from : cur;
@@ -197,7 +207,7 @@
       });
     }
   };
-  const MUTATING = ['save', 'remove', 'reorder', 'saveAccBudget', 'saveCategory', 'addAsset', 'savePrices'];
+  const MUTATING = ['save', 'remove', 'reorder', 'saveAccBudget', 'saveCategory', 'saveTransaction', 'addAsset', 'savePrices'];
 
   function cancelPhoto(pid) {
     queue = queue.filter(q => q.pending !== pid);
@@ -548,6 +558,10 @@ body[data-anim="off"] .ov-r.today,body[data-anim="off"] .ov-sec .chip.pulse{anim
 body[data-anim="off"] .ov-r.today{background:rgba(234,88,12,.12)}
 .ov-sec .ov{background:linear-gradient(180deg,var(--ct),var(--card) 130px);border-color:var(--ct)}
 .ov-sec .ov-r{border-bottom-color:var(--ct);border-bottom-color:color-mix(in srgb,var(--c) 22%,transparent)}
+.catchips{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 12px}
+.catchip{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:99px;padding:8px 14px;font-size:14.5px}
+.catchip.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.catchip.more{border-style:dashed;color:var(--acc)}
 .nsug{display:flex;gap:6px;flex-wrap:wrap;margin:-4px 0 10px}
 .nchip{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:99px;padding:5px 12px;font-size:13.5px}
 .qchips{-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;overflow-y:hidden;touch-action:pan-x pan-y;display:flex;gap:8px;overflow-x:auto;margin:10px -2px 2px;padding:2px;scrollbar-width:none}.qchips::-webkit-scrollbar{display:none}
@@ -658,7 +672,7 @@ svg text{fill:var(--mute)}
 /* Base currency LKR. Budgets, goals and totals are in LKR.
    USD accounts keep their balance in USD. Every USD transaction stores the rate used,
    and every rate update is saved as a new row in the Rates sheet (history is never overwritten). */
-let D = {Categories:[],Accounts:[],Transactions:[],Goals:[],Settings:[],Rates:[],Loans:[],LoanPayments:[],AccBudgets:[],Assets:[],InvTx:[],Prices:[],BudgetLog:[]};
+let D = {Categories:[],Accounts:[],Transactions:[],Goals:[],Settings:[],Rates:[],Loans:[],LoanPayments:[],AccBudgets:[],Assets:[],InvTx:[],Prices:[],BudgetLog:[],CardPay:[],CardPlans:[]};
 let homeAcct = null, booted = false;     // homeAcct null = not chosen yet, use the default account
 let homeOpen = null, stmtFrom = null, moreEdit = false;
 let tab = 'home', M = null, homeAll = false, reorder = false, sub = null, invKind = 'Unit Trust', budAcct = null, stmtAcc = null, stmtShown = 40, showSettled = false, reopen = null;
@@ -677,7 +691,7 @@ const PAL = ['#0f766e','#c2410c','#2563eb','#a21caf','#ca8a04','#0891b2','#dc262
 const byOrder = (a, b) => (+a.Order || 1e9) - (+b.Order || 1e9);
 
 function setData(d) {
-  D = Object.assign({Settings: [], Rates: [], Loans: [], LoanPayments: [], AccBudgets: [], Assets: [], InvTx: [], Prices: [], BudgetLog: []}, d);
+  D = Object.assign({Settings: [], Rates: [], Loans: [], LoanPayments: [], AccBudgets: [], Assets: [], InvTx: [], Prices: [], BudgetLog: [], CardPay: [], CardPlans: []}, d);
   D.Categories.sort(byOrder); D.Accounts.sort(byOrder);
 }
 function call(fn, ...args) {
@@ -742,6 +756,7 @@ function entries(a) {          // every movement on this account: transactions, 
     if (l && p.Account === a.Name) e.push({d: p.Date, s: s++, amt: (l.Direction === 'Lent' ? 1 : -1) * (+p.Amount || 0), k: 'pay', r: p, l});
   });
   D.InvTx.forEach(t => { if (t.Account === a.Name) e.push({d: t.Date, s: s++, amt: (t.Type === 'Buy' ? -1 : 1) * (+t.Amount || 0), k: 'inv', r: t}); });
+  D.CardPay.forEach(p => { if (p.Card === a.Name) e.push({d: p.Date, s: s++, amt: +p.Amount || 0, k: 'cardpay', r: p}); });
   return e;
 }
 const own = a => (+a.Opening || 0) + sum(entries(a), x => x.amt);   // balance in the account's own currency
@@ -930,7 +945,7 @@ function home() {
     <div class="stats">
       <div><span class="mute">Income</span><b class="inc">${n0(inc)}</b></div>
       <div><span class="mute">Spent</span><b class="exp">${n0(exp)}</b></div>
-      <div ${a ? `onclick="openStmt('${a.ID}')"` : ''}><span class="mute">Balance${a ? ' ›' : ''}</span><b>${n0(worth)}</b></div>
+      <div onclick="openStmt('${(a || accByName(defAcct()) || homeList()[0] || leafList()[0] || {}).ID}')"><span class="mute">Balance ›</span><b>${n0(worth)}</b></div>
     </div>
     ${rec > 0.005 || owe > 0.005 ? `<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
       ${rec > 0.005 ? `<span class="rcv" onclick="${goLoans}">💰 To receive <b>${n0(rec)}</b></span>` : ''}
@@ -1158,40 +1173,112 @@ function accNode(a, depth) {
     </div>${kids(a).map(k => accNode(k, depth + 1)).join('')}</div>`;
 }
 function closeStmt() { stmtAcc = null; if (stmtFrom) tab = stmtFrom; stmtFrom = null; render(); window.scrollTo(0, 0); }
-function openStmt(id) { stmtFrom = tab !== 'acc' ? tab : null; tab = 'acc'; reorder = false; sub = null; stmtAcc = id; stmtShown = 40; render(); window.scrollTo(0, 0); }
+function openStmt(id) { stmtFrom = tab !== 'acc' ? tab : null; tab = 'acc'; reorder = false; sub = null; stmtAcc = id; stmtShown = 40; stmtK = 0; stmtAll = false; render(); window.scrollTo(0, 0); }
 function describe(e) {
   const r = e.r;
   if (e.k === 'tx') {
     if (r.Type === 'Transfer') return {title: 'Transfer to ' + r.ToAccount, sub: [r.Category && 'counts to ' + r.Category, r.Note].filter(Boolean).join(' · '), go: `editTx('${r.ID}')`};
     return {title: r.Category || r.Type, sub: r.Note || '', go: `editTx('${r.ID}')`};
   }
+  if (e.k === 'cardpay') return {title: 'Payment received', sub: r.Note || '', go: r.TxID ? `editTx('${r.TxID}')` : ''};
   if (e.k === 'txin') return {title: 'Transfer from ' + r.Account, sub: r.Note || '', go: `editTx('${r.ID}')`};
   if (e.k === 'loan') return {title: (r.Direction === 'Lent' ? 'Lent to ' : 'Borrowed from ') + r.Person, sub: r.Note || '', go: `showLoan('${r.ID}')`};
   if (e.k === 'pay') return {title: (e.l.Direction === 'Lent' ? 'Received from ' : 'Repaid to ') + e.l.Person, sub: r.Note || '', go: `showLoan('${e.l.ID}')`};
   const as = D.Assets.find(x => x.ID === r.AssetID);
   return {title: (r.Type === 'Buy' ? 'Bought ' : r.Type === 'Sell' ? 'Sold ' : 'Dividend · ') + (as ? as.Name : 'investment'), sub: r.Note || '', go: as ? `showAsset('${as.ID}')` : ''};
 }
+let stmtK = 0, stmtAll = false;
+const isoD = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+function stmtRange(a, k) {                                  // credit cards: billing cycle (statement day); others: calendar month
+  const t = new Date(), sd = Math.round(+a.StmtDay) || 0;
+  if (a.Type === 'Card' && sd >= 1 && sd <= 31) {
+    const endM = t.getMonth() + (t.getDate() > sd ? 1 : 0) + k, end = dueIn(t.getFullYear(), endM, sd), pe = dueIn(t.getFullYear(), endM - 1, sd);
+    const start = new Date(pe.getFullYear(), pe.getMonth(), pe.getDate() + 1);
+    return {start, end, label: shortDate(start) + ' – ' + shortDate(end), cycle: true};
+  }
+  const start = new Date(t.getFullYear(), t.getMonth() + k, 1), end = new Date(t.getFullYear(), t.getMonth() + k + 1, 0);
+  return {start, end, label: start.toLocaleString(undefined, {month: 'long', year: 'numeric'}), cycle: false};
+}
+function switchStmt(id) { stmtAcc = id; stmtK = 0; stmtAll = false; stmtShown = 40; render(); window.scrollTo(0, 0); }
+function editPlan(id, cardName) {
+  const v = id ? D.CardPlans.find(p => p.ID === id) : {Card: cardName, Start: today(), Months: 12, Closed: 'Open'};
+  openForm(id ? 'Edit installment plan' : 'New installment plan', 'CardPlans', [
+    {k:'Item', l:'Purchase (e.g. Samsung TV)', req:true},
+    {k:'Total', l:'Total to pay in installments (LKR, include any interest)', t:'number', req:true},
+    {k:'Months', l:'Number of monthly installments', t:'number', req:true},
+    {k:'Start', l:'First installment date', t:'date', req:true},
+    {k:'Note', l:'Note'},
+    {k:'Closed', l:'Status', t:'select', o:['Open', 'Closed']}
+  ], v);
+}
 function statement() {
   const a = D.Accounts.find(x => x.ID === stmtAcc);
   if (!a) { stmtAcc = null; return acc(); }
-  const c = cur(a), f = x => c === 'USD' ? fmtC(x, c) : n0(x);
+  const c = cur(a), f = x => c === 'USD' ? fmtC(x, c) : n0(x), card = a.Type === 'Card';
   const es = entries(a).sort((x, y) => String(x.d) < String(y.d) ? -1 : String(x.d) > String(y.d) ? 1 : x.s - y.s);
   let bal = +a.Opening || 0;
-  const rows = es.map(e => { bal += e.amt; return Object.assign({}, e, {bal}); }).reverse();
-  const shown = rows.slice(0, stmtShown), all = rows.length <= stmtShown;
+  const all = es.map(e => { bal += e.amt; return Object.assign({}, e, {bal}); }), endBal = bal;
+  let rows, opening, closing, rng = null;
+  if (stmtAll) { rows = all.slice().reverse(); opening = +a.Opening || 0; closing = endBal; }
+  else {
+    rng = stmtRange(a, stmtK);
+    const s0 = isoD(rng.start), e0 = isoD(rng.end), dd = e => String(e.d).slice(0, 10);
+    const before = all.filter(e => dd(e) < s0), inside = all.filter(e => dd(e) >= s0 && dd(e) <= e0);
+    opening = before.length ? before[before.length - 1].bal : (+a.Opening || 0);
+    closing = inside.length ? inside[inside.length - 1].bal : opening;
+    rows = inside.slice().reverse();
+  }
+  const inn = sum(rows, e => e.amt > 0 ? e.amt : 0), out = sum(rows, e => e.amt < 0 ? -e.amt : 0);
+  const shown = stmtAll ? rows.slice(0, stmtShown) : rows, allShown = stmtAll ? rows.length <= stmtShown : true;
   const row = e => { const d = describe(e);
-    return `<div class="srow" style="padding:7px 0;align-items:baseline" ${d.go ? `onclick="${d.go}"` : ''}><div style="min-width:0"><span class="mute">${esc(String(e.d).slice(5))}</span> ${esc(d.title)}</div>
+    return `<div class="srow" style="padding:7px 0;align-items:baseline" ${d.go ? `onclick="${d.go}"` : ''}><div style="min-width:0"><span class="mute">${esc(String(e.d).slice(5))}</span> ${esc(d.title)}${d.sub ? ` <span class="mute" style="font-size:12px">· ${esc(d.sub)}</span>` : ''}</div>
       <b class="${e.amt < 0 ? 'exp' : 'inc'}" style="white-space:nowrap;font-weight:500">${e.amt < 0 ? '−' : '+'} ${f(Math.abs(e.amt))}</b></div>`; };
-  return `<div class="back" onclick="closeStmt()">‹ ${stmtFrom === 'ov' ? 'Overview' : stmtFrom === 'home' ? 'Home' : 'Accounts'}</div>
-  <div class="card tight"><div class="row"><div><b style="font-size:17px">${esc(a.Name)}</b> <span class="mute">${c}${a.Type ? ' · ' + esc(a.Type) : ''}</span></div>
-    <span class="lnk" onclick="editAcc('${a.ID}')">Edit</span></div>
-    <div class="mute" style="margin-top:4px">Ending balance</div>
-    <div class="big ${bal < 0 ? 'warn' : ''}" style="font-size:26px">${f(bal)}</div>
-    ${c === 'USD' ? `<div class="mute">≈ ${fmt(bal * rateOf(c))}</div>` : ''}
-    ${kids(a).length ? `<div class="mute" style="margin-top:4px">With sub-accounts: ${f(total(a))}</div>` : ''}</div>
-  <div class="card tight">${shown.map(row).join('') || '<div class="mute" style="padding:6px 0">No movements yet.</div>'}
-    ${all ? `<div class="srow"><div><b>Opening balance</b></div><div class="right"><b>${f(+a.Opening || 0)}</b></div></div>` : ''}
-    ${all ? '' : `<div class="more" onclick="stmtShown+=40;render()">Show earlier (${rows.length - stmtShown} more)</div>`}</div>`;
+  const chips = `<div class="qchips" style="margin:0 0 8px">${leafList().map(x => `<button class="qc ${x.ID === a.ID ? 'on' : ''}" onclick="switchStmt('${x.ID}')">${x.Type === 'Card' ? '💳 ' : ''}${esc(x.Name)}</button>`).join('')}</div>`;
+  const owed = Math.max(0, -endBal), lim = +a.Limit || 0, due = card ? cardDue(a) : null;
+  const head = `<div class="card tight"><div class="row"><div><b style="font-size:17px">${esc(a.Name)}</b> <span class="mute">${c}${a.Type ? ' · ' + esc(a.Type) : ''}</span></div><span class="lnk" onclick="editAcc('${a.ID}')">Edit</span></div>
+    <div class="mute" style="margin-top:4px">${card ? 'Amount owed' : 'Ending balance'}</div>
+    <div class="big ${card ? (owed > 0 ? 'warn' : '') : (endBal < 0 ? 'warn' : '')}" style="font-size:26px">${card ? f(owed > 0 ? owed : endBal) : f(endBal)}</div>
+    ${c === 'USD' ? `<div class="mute">≈ ${fmt(endBal * rateOf(c))}</div>` : ''}
+    ${card && lim ? `${progress(owed, lim, 'thin', true)}<div class="row mute" style="font-size:12px;margin-top:4px"><span>Available ${f(lim - owed)}</span><span>Limit ${f(lim)}</span></div>` : ''}
+    ${card && due && owed > 0 ? `<div class="mute" style="margin-top:6px">Pay by ${shortDate(due)} · ${when(daysTo(due))}</div>` : ''}
+    ${kids(a).length ? `<div class="mute" style="margin-top:4px">With sub-accounts: ${f(total(a))}</div>` : ''}</div>`;
+  const bar = `<div class="row" style="margin:6px 0 8px;align-items:center">
+    ${stmtAll ? '<b>All time</b>' : `<div class="row" style="gap:10px;align-items:center"><button class="qc" onclick="stmtK--;render()">‹</button><b>${esc(rng.label)}</b><button class="qc" ${stmtK >= 0 ? 'disabled style="opacity:.4"' : ''} onclick="stmtK++;render()">›</button></div>`}
+    <span class="lnk" style="margin:0" onclick="stmtAll=!stmtAll;stmtK=0;render()">${stmtAll ? 'By period' : 'All time'}</span></div>`;
+  const kpi = `<div class="card tight"><div class="kpi"><div><span>Opening</span><b>${f(opening)}</b></div><div><span>${card ? 'Purchases' : 'Money out'}</span><b class="exp">${f(out)}</b></div>
+    <div><span>${card ? 'Payments' : 'Money in'}</span><b class="inc">${f(inn)}</b></div><div><span>${card ? 'Statement balance' : 'Closing'}</span><b class="${(card ? closing : closing) < 0 ? 'warn' : ''}">${card ? f(Math.max(0, -closing)) : f(closing)}</b></div></div></div>`;
+  let plansHtml = '';
+  if (card) {
+    const plans = D.CardPlans.filter(p => p.Card === a.Name), op = plans.filter(p => p.Closed !== 'Closed'), cl = plans.filter(p => p.Closed === 'Closed');
+    const pc = p => { const q = planCalc(p);
+      return `<div class="card tight" onclick="editPlan('${p.ID}')"><div class="row"><b>${esc(p.Item)}</b><b>${fmt(q.remain)}</b></div>
+        <div class="row mute"><span>${fmt(q.per)} × ${q.n} months · ${q.done} of ${q.n} paid</span><span>${q.left} left</span></div>${progress(q.done, q.n, 'thin')}
+        <div class="mute" style="font-size:12px;margin-top:4px">${q.next ? 'Next ' + shortDate(q.next) : 'Completed'}${q.end ? ' · ends ' + q.end.toLocaleString(undefined, {month: 'short', year: 'numeric'}) : ''}</div></div>`; };
+    plansHtml = `<h2>Installment plans</h2>
+      ${op.length ? `<div class="card tight"><div class="row"><span class="mute">Remaining in plans</span><b>${fmt(sum(op, p => planCalc(p).remain))}</b></div></div>${op.map(pc).join('')}` : '<div class="mute" style="margin-bottom:8px">No installment plans. Add one when you buy something on installments.</div>'}
+      ${cl.length ? `<div class="mute" style="font-size:12px;margin:8px 0 4px">Closed</div>${cl.map(p => `<div class="card tight" style="opacity:.65" onclick="editPlan('${p.ID}')"><div class="row"><b>${esc(p.Item)}</b><span class="mute">${fmt(p.Total)}</span></div></div>`).join('')}` : ''}
+      <button class="btn ghost" onclick="editPlan(null,'${esc(a.Name).replace(/'/g, "\\'")}')">＋ Installment plan</button>`;
+  }
+  return `<div class="back" onclick="closeStmt()">‹ ${stmtFrom === 'ov' ? 'Overview' : stmtFrom === 'home' ? 'Home' : 'Accounts'}</div>${chips}${head}${bar}${kpi}
+  <div class="card tight">${shown.map(row).join('') || '<div class="mute" style="padding:6px 0">No movements in this period.</div>'}
+    ${stmtAll && allShown ? `<div class="srow"><div><b>Opening balance</b></div><div class="right"><b>${f(+a.Opening || 0)}</b></div></div>` : ''}
+    ${stmtAll && !allShown ? `<div class="more" onclick="stmtShown+=40;render()">Show earlier (${rows.length - stmtShown} more)</div>` : ''}</div>${plansHtml}`;
+}
+const payDay = a => { const d = Math.round(+a.PayDay); return d >= 1 && d <= 31 ? d : 0; };
+const cardDue = a => { const d = payDay(a); if (!d) return null; const t = new Date(); let dt = dueIn(t.getFullYear(), t.getMonth(), d); if (midnight(dt) < midnight(t)) dt = dueIn(t.getFullYear(), t.getMonth() + 1, d); return dt; };
+const planCalc = p => {                                    // an installment plan on a card: equal monthly parts starting at Start
+  const tot = +p.Total || 0, n = Math.max(1, Math.round(+p.Months) || 1), st = parseD(p.Start), t0 = midnight(new Date()), per = tot / n;
+  const done = st && t0 >= st ? Math.min(n, monthsDone(st, t0) + 1) : 0;
+  return {tot, n, per, done, left: n - done, remain: Math.max(0, tot - per * done), end: st ? addMonths(st, n - 1) : null, next: st && done < n ? addMonths(st, done) : null};
+};
+function cardTile(a) {
+  const o = own(a), owed = Math.max(0, -o), lim = +a.Limit || 0, due = cardDue(a);
+  const pl = sum(D.CardPlans.filter(p => p.Card === a.Name && p.Closed !== 'Closed'), p => planCalc(p).remain);
+  return `<div class="ac-card" style="--c:#7c3aed;--ct:rgba(124,58,237,.12)" onclick="openStmt('${a.ID}')">
+    <div class="ac-r" style="border:0"><span class="ac-ic" style="--t:#7c3aed">💳</span><div class="ac-n"><b>${esc(a.Name)}</b><small>Credit card${+a.StmtDay ? ' · statement ' + Math.round(a.StmtDay) + th(Math.round(a.StmtDay)) : ''}</small></div>
+      <div class="ac-b"><b class="${owed > 0 ? 'warn' : 'inc'}">${owed > 0 ? '−' + num(owed) : num(o)}</b><small>${owed > 0 ? 'owed' : 'credit'}</small></div></div>
+    ${lim ? `<div>${progress(owed, lim, 'thin', true)}<div class="row mute" style="font-size:12px;margin:4px 0 8px"><span>Available ${num(lim - owed)}</span><span>Limit ${num(lim)}</span></div></div>` : ''}
+    ${(due && owed > 0) || pl > 0 ? `<div class="row mute" style="font-size:12px;padding:0 0 10px"><span>${due && owed > 0 ? 'Pay by ' + shortDate(due) + ' · ' + when(daysTo(due)) : ''}</span><span>${pl > 0 ? 'Installments left ' + num(pl) : ''}</span></div>` : ''}</div>`;
 }
 const accIc = a => ({Cash: '💵', Bank: '🏦', Card: '💳', Savings: '🐷', Investment: '📈', Other: '🧾'}[a.Type] || '🏦');
 const accTint = a => ({Cash: '#16a34a', Bank: '#2563eb', Card: '#c026d3', Savings: '#0d9488', Investment: '#4f46e5', Other: '#6b7280'}[a.Type] || '#2563eb');
@@ -1208,6 +1295,7 @@ function acc() {
   const lr = lastRate();
   if (reorder) return `<div class="mute" style="margin-bottom:8px">Drag ⠿ to change the order within each level.</div><div class="card tight">${roots().map(a => accNode(a, 0)).join('') || '<div class="empty">No accounts yet.</div>'}</div>
     <div class="btns"><button class="btn" onclick="reorder=false;render()">Done</button></div>`;
+  const isNotCard = a => !(a.Type === 'Card' && !kids(a).length), cards = roots().filter(a => !isNotCard(a));
   const byType = {};
   leafList().forEach(a => { const k = a.Type || 'Other'; byType[k] = (byType[k] || 0) + own(a) * rateOf(cur(a)); });
   const flat = a => kids(a).reduce((r, k) => r.concat([k], flat(k)), []);
@@ -1222,7 +1310,8 @@ function acc() {
     <div class="hchips">${Object.keys(byType).map(k => `<span class="hchip">${accIc({Type: k})} ${esc(k)} ${short(byType[k])}</span>`).join('')}</div>
     <div class="hsm" style="margin-top:10px">USD buy ${n2(buyRate())} · sell ${n2(sellRate())}${lr ? ' · ' + esc(lr.Date) : ''}</div>
     <div style="margin-top:4px"><span class="lnk" onclick="editRates()">Update rate</span><span class="lnk" onclick="showRates()">History</span></div></div>
-  ${roots().length ? roots().map((a, i) => group(a, i)).join('') : '<div class="empty">No accounts yet.</div>'}
+  ${roots().filter(isNotCard).length ? roots().filter(isNotCard).map((a, i) => group(a, i)).join('') : (cards.length ? '' : '<div class="empty">No accounts yet.</div>')}
+  ${cards.length ? `<h2>Credit cards</h2>${cards.map(cardTile).join('')}` : ''}
   <div class="actions"><button onclick="editAcc()">＋ Account</button><button onclick="editTx(null,'Transfer')">⇄ Transfer</button><button onclick="reorder=true;render()">↕ Reorder</button></div>`;
 }
 
@@ -1253,8 +1342,10 @@ const ovSec = (k, c, ct, title, right, html) => { const off = ovCol().has(k);
 
 /* ---------- due alerts when the app opens ---------- */
 const dueDaysSet = () => Math.max(0, +getSet('DueDays') || 3);
+const cardDues = () => D.Accounts.filter(a => a.Type === 'Card' && payDay(a) && own(a) < -0.5).map(a => { const dt = cardDue(a); return {a, owed: -own(a), date: dt, days: daysTo(dt)}; }).sort((x, y) => x.days - y.days);
 function dueItems() {                                      // overdue and coming up within N days, most urgent first
   const N = dueDaysSet(), out = [];
+  cardDues().filter(x => x.days <= N).forEach(x => out.push({k: 'Credit card', title: x.a.Name, sub: 'Payment due', amt: x.owed, days: x.days, go: `openStmt('${x.a.ID}')`}));
   billsDue().filter(x => !x.done && x.days <= N).forEach(x => out.push({k: 'Bill', title: x.c.Name, sub: acctFull(x.acct), amt: x.paid > 0 ? x.left : x.b, days: x.days, go: "go('ov')"}));
   D.Loans.forEach(l => { const n = loanNext(l); if (n && daysTo(n.date) <= N) out.push({k: l.Direction === 'Lent' ? 'To receive' : 'To pay', title: l.Person, sub: n.inst ? 'Installment' : 'Loan due', amt: n.amt, days: daysTo(n.date), go: `openLoan('${l.ID}')`}); });
   fds().filter(f => f.Closed !== 'Closed').forEach(f => { const c = fdCalc(f); if (c.mat && !c.matured && c.daysLeft <= N) out.push({k: 'Deposit', title: f.Name, sub: 'Fixed deposit matures', amt: c.P + (f.Payout && f.Payout !== 'At maturity' ? 0 : c.total), days: c.daysLeft, go: `openFD('${f.ID}')`}); });
@@ -1303,8 +1394,10 @@ function ov() {
     <div class="rt"><b>${x.b ? fmt(x.paid > 0 ? x.left : x.b) : ''}</b><br>${chipFor(x.days)}</div></div>`;
   const doneRow = x => `<div class="ov-r"><div class="l"><b>${esc(x.c.Name)}</b><small>${esc(acctFull(x.acct))} · next ${shortDate(x.next)}</small></div><div class="rt"><span class="chip ok">✓ Paid</span></div></div>`;
   const dueTotal = sum(open, x => x.b ? (x.paid > 0 ? x.left : x.b) : 0);
-  const billsHtml = bills.length
-    ? `<div class="ov">${open.map(billRow).join('')}${done.map(doneRow).join('')}</div>`
+  const cdue = cardDues();
+  const cardRow = x => `<div class="ov-r ${x.days === 0 ? 'today' : ''}" onclick="openStmt('${x.a.ID}')" style="cursor:pointer"><div class="l"><b>💳 ${esc(x.a.Name)}</b><small>Credit card payment · ${Math.round(x.a.PayDay)}${th(Math.round(x.a.PayDay))} of each month</small></div><div class="rt"><b>${fmt(x.owed)}</b><br>${chipFor(x.days)}</div></div>`;
+  const billsHtml = (bills.length || cdue.length)
+    ? `<div class="ov">${cdue.map(cardRow).join('')}${open.map(billRow).join('')}${done.map(doneRow).join('')}</div>`
     : `<div class="ov"><div class="ov-hint">Open Budget, pick an account, tap a category and set its due day. It will appear here with the days left.</div></div>`;
 
   // savings accounts
@@ -1319,7 +1412,7 @@ function ov() {
   const dueKey = l => { const n = loanNext(l); return n ? n.date.getTime() : 9e15; };
   const byDue = (a, b) => dueKey(a) - dueKey(b);
   const loanRow = l => { const nx = loanNext(l), d = nx && nx.date;
-    return `<div class="ov-r ${d && daysTo(d) === 0 ? 'today' : ''}" onclick="openLoan('${l.ID}')" style="cursor:pointer"><div class="l"><b>${esc(l.Person)}</b><small>${nx ? (nx.inst ? 'Installment ' + fmt(nx.amt) + ' · ' : 'Due ') + shortDate(d) : 'No due date'}${+l.Rate > 0 ? ' · ' + n2(l.Rate) + '%' : ''}</small></div>
+    return `<div class="ov-r ${d && daysTo(d) === 0 ? 'today' : ''}" onclick="openLoan('${l.ID}')" style="cursor:pointer"><div class="l"><b>${esc(l.Person)}</b><small>${l.LoanType && l.LoanType !== 'Personal' ? esc(l.LoanType) + ' · ' : ''}${nx ? (nx.inst ? 'Installment ' + fmt(nx.amt) + ' · ' : 'Due ') + shortDate(d) : 'No due date'}${+l.Rate > 0 ? ' · ' + n2(l.Rate) + '%' : ''}</small></div>
       <div class="rt"><b>${fmt(outstanding(l))}</b>${d ? '<br>' + chipFor(daysTo(d)) : ''}</div></div>`; };
   const lent = act.filter(l => l.Direction === 'Lent').sort(byDue), owe = act.filter(l => l.Direction === 'Borrowed').sort(byDue);
   const loanBlock = (title, list, cls) => list.length ? `<div class="ov-sub"><span>${title}</span><b class="${cls}">${fmt(sum(list, outstanding))}</b></div>${list.map(loanRow).join('')}` : '';
@@ -1348,7 +1441,7 @@ function ov() {
 
   const dt = new Date().toLocaleDateString(undefined, {weekday: 'long', day: 'numeric', month: 'long'});
   return `<h1>Overview</h1><div class="ov-date">${dt}</div>
-  ${ovSec('due', '#ea580c', 'rgba(234,88,12,.13)', 'Due', open.length ? fmt(dueTotal) + ' to pay' : bills.length ? 'All paid ✓' : '', billsHtml)}
+  ${ovSec('due', '#ea580c', 'rgba(234,88,12,.13)', 'Due', open.length ? fmt(dueTotal) + ' to pay' : (bills.length || cdue.length) ? (cdue.length ? cdue.length + ' card payment' + (cdue.length > 1 ? 's' : '') : 'All paid ✓') : '', billsHtml)}
   ${ovSec('sav', '#0d9488', 'rgba(13,148,136,.13)', 'Savings', fmt(savTotal), savHtml)}
   ${ovSec('loan', '#2563eb', 'rgba(37,99,235,.13)', 'Loans', act.length ? 'Net ' + sgn(sum(lent, outstanding) - sum(owe, outstanding)) : '', loansHtml)}
   ${ovSec('goal', '#c026d3', 'rgba(192,38,211,.13)', 'Goals', D.Goals.length ? D.Goals.length + (D.Goals.length === 1 ? ' goal' : ' goals') : '', goalsHtml)}
@@ -1381,6 +1474,36 @@ function animScreen() {
   return `<div class="back" onclick="sub='settings';render()">‹ Settings</div><h1>Animation</h1>
   ${opt('off', 'Off', 'No motion at all')}${opt('subtle', 'Subtle', 'Soft fade when a screen opens')}${opt('smooth', 'Smooth', 'Screens slide in the direction you swipe, bars fill')}${opt('lively', 'Lively', 'Bouncy slide, items pop in one by one')}
   <div class="mute" style="margin-top:8px">Tip: swipe left or right on any screen to change tab. On Home, swipe the top card to change account.</div>`;
+}
+let otherAll = false, otherOpen = null, dayOpen = null, dayAll = false;
+const otherCatName = () => { const sv = getSet('OtherCat'); if (sv && D.Categories.some(c => c.Name === sv)) return sv; const m = D.Categories.filter(c => c.Type === 'Expense' && /other/i.test(c.Name)); return m.length ? m[0].Name : ''; };
+function pickOtherCat() { const ex = D.Categories.filter(c => c.Type === 'Expense').map(c => c.Name); openForm('Note-wise summary', 'x', [{k: 'Name', l: 'Show where this category went', t: 'select', o: ex}], {Name: otherCatName() || ex[0]}, {noDelete: true, submit: o => { setSet('OtherCat', o.Name); otherOpen = null; render(); }}); }
+function toggleOther(i) { otherOpen = otherOpen === i ? null : i; render(); }
+function toggleDay(d) { dayOpen = dayOpen === d ? null : d; render(); }
+function moreOther() {
+  const name = otherCatName(), ym = thisYm();
+  if (!name) return `<div class="card" style="margin-top:6px"><b>🔎 Note-wise summary</b><div class="mute" style="margin:4px 0 6px">Pick the category you want to see note by note, for example "Other expense".</div><span class="lnk" style="margin:0" onclick="pickOtherCat()">Choose category</span></div>`;
+  const tx = D.Transactions.filter(t => String(t.Date).slice(0, 7) === ym && t.Category === name && isOut(t)), g = {};
+  tx.forEach(t => { const raw = String(t.Note || '').trim(), k = raw.toLowerCase() || '(no note)'; const o = g[k] || (g[k] = {label: raw || '(no note)', total: 0, n: 0, items: []}); o.total += val(t); o.n++; o.items.push(t); });
+  const list = Object.keys(g).map(k => g[k]).sort((a, b) => b.total - a.total), tot = sum(list, x => x.total), mx = list.length ? list[0].total : 1, shown = otherAll ? list : list.slice(0, 8);
+  const row = (x, i) => `<div style="padding:7px 0;border-top:1px solid var(--line)" onclick="toggleOther(${i})"><div class="row"><span style="min-width:0"><span class="mute">${otherOpen === i ? '▾' : '▸'}</span> ${esc(x.label)}${x.n > 1 ? ` <span class="mute" style="font-size:12px">× ${x.n}</span>` : ''}</span><b>${fmt(x.total)}</b></div>${progress(x.total, mx, 'thin')}
+    ${otherOpen === i ? `<div style="margin-top:6px;padding:4px 10px;background:var(--bg);border-radius:10px">${x.items.slice().sort((p, q) => String(q.Date) < String(p.Date) ? -1 : 1).map(t => `<div class="row" style="padding:4px 0;font-size:13.5px" onclick="event.stopPropagation();editTx('${t.ID}')"><span class="mute">${esc(String(t.Date).slice(5))} · ${esc(t.Account)}</span><b>${fmt(val(t))}</b></div>`).join('')}</div>` : ''}</div>`;
+  return `<div class="card" style="margin-top:6px"><div class="row"><b>🔎 ${esc(name)} by note</b><span class="lnk" style="margin:0" onclick="pickOtherCat()">change</span></div>
+    <div class="mute" style="font-size:12px;margin:2px 0 6px">${new Date().toLocaleString(undefined, {month: 'long'})} · ${list.length} note${list.length === 1 ? '' : 's'} · ${tx.length} expense${tx.length === 1 ? '' : 's'} · ${fmt(tot)}</div>
+    ${list.length ? shown.map((x, i) => row(x, i)).join('') : '<div class="mute" style="padding:6px 0">Nothing in this category yet this month.</div>'}
+    ${list.length > 8 ? `<div class="more" onclick="otherAll=!otherAll;render()">${otherAll ? 'Show less' : 'Show all ' + list.length}</div>` : ''}</div>`;
+}
+function moreDaily() {
+  const ym = thisYm(), tx = D.Transactions.filter(t => String(t.Date).slice(0, 7) === ym && isOut(t));
+  if (!tx.length) return '';
+  const g = {}; tx.forEach(t => { const d = String(t.Date).slice(0, 10); (g[d] = g[d] || []).push(t); });
+  const days = Object.keys(g).sort().reverse(), dt = d => sum(g[d], val), mx = Math.max.apply(null, days.map(dt)), tot = sum(tx, val), shown = dayAll ? days : days.slice(0, 10);
+  const lab = d => new Date(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)).toLocaleDateString(undefined, {weekday: 'short', day: 'numeric', month: 'short'});
+  const row = d => `<div style="padding:7px 0;border-top:1px solid var(--line)" onclick="toggleDay('${d}')"><div class="row"><span><span class="mute">${dayOpen === d ? '▾' : '▸'}</span> ${esc(lab(d))} <span class="mute" style="font-size:12px">× ${g[d].length}</span></span><b>${fmt(dt(d))}</b></div>${progress(dt(d), mx, 'thin')}
+    ${dayOpen === d ? `<div style="margin-top:6px;padding:4px 10px;background:var(--bg);border-radius:10px">${g[d].map(t => `<div class="row" style="padding:4px 0;font-size:13.5px" onclick="event.stopPropagation();editTx('${t.ID}')"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.Category)}${t.Note ? ` <span class="mute">· ${esc(t.Note)}</span>` : ''}</span><b style="white-space:nowrap">${fmt(val(t))}</b></div>`).join('')}</div>` : ''}</div>`;
+  return `<div class="card" style="margin-top:6px"><div class="row"><b>🗓 Expenses by date</b><span class="mute" style="font-size:12px">${new Date().toLocaleString(undefined, {month: 'long'})}</span></div>
+    <div class="mute" style="font-size:12px;margin:2px 0 6px">${days.length} day${days.length === 1 ? '' : 's'} with spending · ${fmt(tot)} · average ${fmt(tot / days.length)} a day</div>
+    ${shown.map(row).join('')}${days.length > 10 ? `<div class="more" onclick="dayAll=!dayAll;render()">${dayAll ? 'Show less' : 'Show all ' + days.length + ' days'}</div>` : ''}</div>`;
 }
 function moreInsights() {                                  // "this month" summary shown under Settings
   const ym = thisYm(), n = new Date(), d = n.getDate(), dim = new Date(n.getFullYear(), n.getMonth() + 1, 0).getDate();
@@ -1439,7 +1562,7 @@ function more() {
   <div>${tiles}</div>
   ${hid.length && !moreEdit ? `<div class="card"><div class="mute" style="font-size:12px;margin-bottom:8px">Other tabs</div><div class="chips">${hid.map(t => `<button class="chipbtn" onclick="go('${t[0]}')">${t[1]} ${t[2]}</button>`).join('')}</div></div>` : ''}
   ${moreEdit ? '' : tile('settings', '⚙️', 'Settings', 'Name, tabs, alerts, animation' + (typeof mmLockSettings === 'function' ? ', lock, sync' : ''))}
-  ${moreEdit ? '' : moreInsights()}`;
+  ${moreEdit ? '' : moreOther() + moreDaily() + moreInsights()}`;
 }
 function tabsScreen() {
   const L = allTabs(), h = hiddenSet();
@@ -1463,7 +1586,7 @@ function loans() {
     const o = outstanding(l), tot = +l.Amount || 0, late = l.DueDate && l.DueDate < today() && o > 0.005;
     return `<div class="card tight" onclick="showLoan('${l.ID}')"><div class="row"><b>${esc(l.Person)}</b>
       <b class="${l.Direction === 'Lent' ? 'inc' : 'exp'}">${fmt(o)}</b></div>
-      <div class="row mute"><span>of ${fmt(tot)}${l.DueDate ? ' · due ' + esc(l.DueDate) : ''}</span><span class="${late ? 'warn' : ''}">${o <= 0.005 ? 'Settled' : late ? 'Overdue' : ''}</span></div>
+      <div class="row mute"><span>${l.LoanType ? esc(l.LoanType) + ' · ' : ''}of ${fmt(tot)}${l.DueDate ? ' · due ' + esc(l.DueDate) : ''}</span><span class="${late ? 'warn' : ''}">${o <= 0.005 ? 'Settled' : late ? 'Overdue' : ''}</span></div>
       ${progress(tot - o, tot, 'thin')}</div>`;
   };
   const sec = (title, list) => list.length ? `<h2>${title}</h2>${list.map(card).join('')}` : '';
@@ -1514,17 +1637,19 @@ function showLoan(id) {
       <button class="btn ghost" onclick="closeM()">Close</button></div>`;
   $('#bd').style.display = 'block'; $('#sheet').style.display = 'block';
 }
+const LOAN_TYPES = ['Personal', 'Gold loan', 'Vehicle leasing', 'Housing', 'Education', 'Business', 'Credit / overdraft', 'Other'];
 function editLoan(id) {
   const v = id ? loanById(id) : {Direction: 'Lent', Date: today()};
   openForm(id ? 'Edit loan' : 'New loan', 'Loans', [
-    {k:'Person', l:'Person', req:true},
-    {k:'Direction', l:'Type (Lent = they owe me, Borrowed = I owe)', t:'select', o:['Lent','Borrowed']},
+    {k:'Person', l:'Person / lender (e.g. HNB, Kamal)', req:true},
+    {k:'LoanType', l:'Loan type', t:'select', o:LOAN_TYPES},
+    {k:'Direction', l:'Direction (Lent = they owe me, Borrowed = I owe)', t:'select', o:['Lent','Borrowed']},
     {k:'Amount', l:'Amount (LKR)', t:'number', req:true},
     {k:'Date', l:'Date', t:'date', req:true},
     {k:'DueDate', l:'Due date (optional)', t:'date'},
     {k:'Account', l:"Account (none = don't change any balance)", t:'select', o:[''].concat(lkrAccs())},
     {k:'Rate', l:'Interest rate % per year (optional)', t:'number'},
-    {k:'Installment', l:'Installment amount (optional)', t:'number'},
+    {k:'Installment', l:'Installment amount (optional, e.g. leasing or personal loans; gold loans usually have none)', t:'number'},
     {k:'Freq', l:'Installment every', t:'select', o:['Monthly','Weekly']},
     {k:'FirstInst', l:'First installment date (optional)', t:'date'},
     {k:'Note', l:'Note'}
@@ -1876,6 +2001,34 @@ function delM() {
   closeM(); call('remove', sheet, id);
 }
 
+const lkrOf = o => (+o.Amount || 0) * (cur(accByName(o.Account)) === 'USD' ? (+o.Rate || sellRate()) : 1);
+const txLinks = o => {                                     // an expense in a category linked to a loan / card also pays it
+  const c = D.Categories.find(x => x.Name === o.Category && x.Type === 'Expense'), out = {};
+  if (!c || o.Type !== 'Expense') return out;
+  if (c.LoanID && loanById(c.LoanID)) out.loan = {id: c.LoanID, lkr: lkrOf(o)};
+  const card = c.CardID ? D.Accounts.find(a => a.ID === c.CardID) : null;
+  if (card) out.card = {name: card.Name, amt: cur(card) === 'USD' ? lkrOf(o) / sellRate() : lkrOf(o)};
+  return out;
+};
+const linkText = c => { if (!c || c.Type !== 'Expense') return ''; const l = c.LoanID && loanById(c.LoanID), k = c.CardID && D.Accounts.find(a => a.ID === c.CardID);
+  return [l ? '🤝 also counts as a payment on ' + l.Person + (l.LoanType ? ' (' + l.LoanType + ')' : '') : '', k ? '💳 also reduces the balance of ' + k.Name : ''].filter(Boolean).join(' · '); };
+function renderCatChips() {                                // most used categories as buttons, the rest under "More"
+  const sel = $('#f_Category'), box = $('#catchips'); if (!sel || !box) return;
+  const acct = $('#f_Account').value;
+  const opts = Array.from(sel.options).filter(o => o.value !== '__all'), hasAll = Array.from(sel.options).some(o => o.value === '__all');
+  const cnt = {}, cntA = {}; D.Transactions.forEach(t => { if (!t.Category) return; cnt[t.Category] = (cnt[t.Category] || 0) + 1; if (t.Account === acct) cntA[t.Category] = (cntA[t.Category] || 0) + 1; });
+  const score = o => (cntA[o.value] || 0) * 1000 + (cnt[o.value] || 0);
+  const sorted = opts.slice().sort((x, y) => x.value === '' ? -1 : y.value === '' ? 1 : score(y) - score(x));
+  if (!M.catTouched && !(M.v && M.v.ID)) { const best = sorted.find(o => o.value !== ''); if (best) sel.value = best.value; }   // new entry: start on the most used category
+  const cur0 = sel.value;
+  let top = sorted.slice(0, 6);
+  if (cur0 && top.length && !top.some(o => o.value === cur0)) { const c0 = sorted.find(o => o.value === cur0); if (c0) top[top.length - 1] = c0; }
+  const rest = sorted.filter(o => top.indexOf(o) < 0), more = !!M.catMore;
+  const chip = o => `<button type="button" class="catchip ${o.value === cur0 ? 'on' : ''}" data-v="${esc(o.value)}" onclick="pickCat(this.dataset.v)">${esc(o.value === '' ? '(none)' : o.text)}</button>`;
+  box.innerHTML = top.map(chip).join('') + (more ? rest.map(chip).join('') + (hasAll ? '<button type="button" class="catchip" data-v="__all" onclick="pickCat(this.dataset.v)">＋ other…</button>' : '') : '')
+    + (rest.length || hasAll ? `<button type="button" class="catchip more" onclick="M.catMore=!M.catMore;renderCatChips()">${more ? 'Less ▴' : 'More ▾'}</button>` : '');
+}
+function pickCat(v) { M.catTouched = true; $('#f_Category').value = v; M.opts.onChange(false); }
 function noteSuggestions(q, cat) {                         // earlier notes that match what is being typed
   const notes = {};
   D.Transactions.forEach(t => { const x = String(t.Note || '').trim(); if (!x) return; const k = x.toLowerCase(); const o = notes[k] || (notes[k] = {text: x, n: 0, last: '', cat: 0}); o.n++; if (String(t.Date) > o.last) o.last = String(t.Date); if (cat && t.Category === cat) o.cat++; });
@@ -1911,9 +2064,10 @@ function editTx(id, type) {
     const ty = $('#f_Type').value, name = $('#f_Category').value, acct = $('#f_Account').value, selC = $('#f_Category');
     const c = D.Categories.find(x => x.Name === name && (ty === 'Transfer' || x.Type === ty));
     if (!c || name === '__all') { box.style.display = 'none'; selC.style.borderColor = ''; return; }
+    const ln = linkText(c) ? `<div class="mute" style="font-size:12px;margin-top:4px">${esc(linkText(c))}</div>` : '';
     const ym0 = ($('#f_Date').value || today()).slice(0, 7), ab = D.AccBudgets.find(x => x.Category === name && x.Account === acct), budget = ab ? accBud(name, acct, ym0) : catBud(c, ym0);
     box.style.display = 'block';
-    if (!budget) { box.innerHTML = '<div class="mute" style="font-size:12px">No budget set for this category.</div>'; selC.style.borderColor = ''; return; }
+    if (!budget) { box.innerHTML = '<div class="mute" style="font-size:12px">No budget set for this category.</div>' + ln; selC.style.borderColor = ''; return; }
     const ym = ($('#f_Date').value || today()).slice(0, 7), exp = c.Type === 'Expense';
     const spent = sum(D.Transactions.filter(t => t.ID !== id && String(t.Date).slice(0, 7) === ym && t.Category === name && (exp ? isOut(t) : isInTag(t)) && (!ab || t.Account === acct || (!exp && t.ToAccount === acct))), val);
     let amt = calcVal('#f_Amount'); if (cur(accByName(acct)) === 'USD') amt *= (+$('#f_Rate').value || sellRate());
@@ -1921,8 +2075,8 @@ function editTx(id, type) {
     const col = !exp ? 'var(--acc)' : spendColor(pct);
     selC.style.borderColor = col;
     box.innerHTML = `<div class="bh-bar"><i style="width:${Math.min(pct, 100).toFixed(0)}%;background:${col}"></i></div>
-      <div class="bh-t" style="color:${col}">${exp ? (pct >= 100 ? 'Over budget by ' + fmt(-left) : 'Left ' + fmt(left) + ' of ' + fmt(budget)) : 'Received ' + fmt(after) + ' of ' + fmt(budget)}
-      <span style="font-weight:400;opacity:.85"> · ${exp ? 'spent' : 'got'} ${fmt(spent)}${amt ? ' + ' + fmt(amt) : ''}</span></div>`;
+      <div class="bh-t" style="color:${col}">${exp ? (pct >= 100 ? (left < -0.5 ? 'Over budget by ' + fmt(-left) : 'Budget reached') : 'Left ' + fmt(left) + ' of ' + fmt(budget)) : 'Received ' + fmt(after) + ' of ' + fmt(budget)}
+      <span style="font-weight:400;opacity:.85"> · ${exp ? 'spent' : 'got'} ${fmt(spent)}${amt ? ' + ' + fmt(amt) : ''}</span></div>${ln}`;
   };
   openForm(id ? 'Edit transaction' : 'New transaction', 'Transactions', [
     {k:'Type', l:'Type', t:'select', o:['Expense','Income','Transfer']},
@@ -1937,6 +2091,8 @@ function editTx(id, type) {
   ], v, {
     extra: PHOTO_HTML,
     rateAuto: !id || !v.Rate,
+    prep: o => { if (!o.ID) o.ID = rid(); },
+    submit: o => call('saveTransaction', o, txLinks(o)),
     onChange: first => {
       const ty = $('#f_Type').value, sel = $('#f_Category');
       const [c, c2] = curs();
@@ -1956,6 +2112,7 @@ function editTx(id, type) {
           '</optgroup><optgroup label="Income">' + cats('Income').map(opt).join('') + '</optgroup>'
         : cats(ty).map(opt).join('')) + (restricted ? '<option value="__all">Show all categories…</option>' : '');
       show('Category', true);
+      renderCatChips();
       updHint();
       label('Account', ty === 'Transfer' ? 'From account' : 'Account');
       label('Category', ty === 'Transfer' ? 'Budget category (optional, e.g. Saving)' : 'Category');
@@ -1983,6 +2140,8 @@ function editTx(id, type) {
   });
   $('#f_Category').onchange = () => M.opts.onChange(false);
   document.querySelector('[data-k=Category]').insertAdjacentHTML('afterend', '<div id="bhint" class="bhint" style="display:none"></div>');
+  document.querySelector('[data-k=Category]').insertAdjacentHTML('afterend', '<div id="catchips" class="catchips"></div>');
+  $('#f_Category').style.display = 'none'; renderCatChips(); updHint();
   document.querySelector('[data-k=Note]').insertAdjacentHTML('afterend', '<div id="nsug" class="nsug"></div>');
   $('#f_Note').addEventListener('input', showNoteSug); $('#f_Note').addEventListener('focus', showNoteSug);
   $('#f_Note').addEventListener('blur', () => setTimeout(() => { const b = $('#nsug'); if (b) b.innerHTML = ''; }, 200));
@@ -2087,15 +2246,23 @@ function addToAcct() {                                       // add a category t
     submit: o => { if (o.Cat === NEW) editCat(null, true); else { const c = free.find(x => label(x) === o.Cat); if (c) editAcctBudget(c.ID); } }
   });
 }
+const loanLabels = () => { const m = {}, seen = {};
+  D.Loans.filter(l => l.Direction === 'Borrowed').forEach(l => { let lab = l.Person + (l.LoanType ? ' · ' + l.LoanType : '') + ' · ' + fmt(outstanding(l)) + ' left'; if (seen[lab]) lab += ' (' + l.ID.slice(0, 4) + ')'; seen[lab] = 1; m[lab] = l.ID; });
+  return m; };
 function editCat(id, forAcct) {
   const nid = forAcct ? rid() : '';
-  const v = id ? Object.assign({}, D.Categories.find(c => c.ID === id), {Budget: catBud(D.Categories.find(c => c.ID === id), month)}) : {Type: 'Expense'};
+  const LM = loanLabels(), CM = {}; D.Accounts.filter(a => a.Type === 'Card').forEach(a => { CM[a.Name] = a.ID; });
+  const labOf = (map, v) => Object.keys(map).filter(k => map[k] === v)[0] || '(none)';
+  const cat0 = id ? D.Categories.find(c => c.ID === id) : null;
+  const v = id ? Object.assign({}, cat0, {Budget: catBud(cat0, month), LoanID: labOf(LM, cat0.LoanID), CardID: labOf(CM, cat0.CardID)}) : {Type: 'Expense', LoanID: '(none)', CardID: '(none)'};
   const split = !!v.Name && D.AccBudgets.some(x => x.Category === v.Name);
   openForm(id ? 'Edit category' : 'New category', 'Categories', [
     {k:'Type', l:'Type', t:'select', o:['Expense','Income']},
     {k:'Name', l:'Name', req:true},
-    {k:'Budget', l: split ? 'Monthly budget in LKR (total of its account budgets; change them in Budget)' : 'Monthly budget in LKR (income: monthly target)', t:'number', ro: split}
-  ], v, Object.assign({submit: o => call('saveCategory', o, month)}, forAcct ? {noDelete: true, prep: o => { o.ID = nid; }, reopen: 'acctbud:' + nid} : {}));
+    {k:'Budget', l: split ? 'Monthly budget in LKR (total of its account budgets; change them in Budget)' : 'Monthly budget in LKR (income: monthly target)', t:'number', ro: split},
+    {k:'LoanID', l:'Pays this loan (optional): expenses here count as a loan payment', t:'select', o:['(none)'].concat(Object.keys(LM))},
+    {k:'CardID', l:'Pays this credit card (optional): expenses here reduce its balance', t:'select', o:['(none)'].concat(Object.keys(CM))}
+  ], v, Object.assign({submit: o => { o.LoanID = LM[o.LoanID] || ''; o.CardID = CM[o.CardID] || ''; call('saveCategory', o, month); }}, forAcct ? {noDelete: true, prep: o => { o.ID = nid; }, reopen: 'acctbud:' + nid} : {}));
 }
 function editAcc(id) {
   const v = id ? D.Accounts.find(a => a.ID === id) : {Type: 'Bank', Currency: 'LKR'};
@@ -2105,8 +2272,11 @@ function editAcc(id) {
     {k:'Currency', l:'Currency', t:'select', o:['LKR','USD']},
     {k:'Parent', l:'Sub-account of', t:'select', o:parents},
     {k:'Type', l:'Type', t:'select', o:['Cash','Bank','Card','Savings','Investment','Other']},
-    {k:'Opening', l:'Opening balance (in account currency)', t:'number'},
-    {k:'Target', l:'Target balance (optional, in account currency)', t:'number'}
+    {k:'Opening', l:'Opening balance (account currency). Enter what you owe as a negative number, e.g. a credit card', t:'number'},
+    {k:'Target', l:'Target balance (optional, in account currency)', t:'number'},
+    {k:'Limit', l:'Credit limit (credit cards only)', t:'number'},
+    {k:'StmtDay', l:'Statement day of the month, 1–31 (credit cards only)', t:'number'},
+    {k:'PayDay', l:'Payment due day of the month, 1–31 (credit cards only)', t:'number'}
   ], v);
 }
 function editGoal(id) {
