@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+<meta charset="utf-8">
 <meta name="theme-color" content="#0f766e">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -30,9 +31,14 @@
     FDs: ['ID','Name','Principal','Rate','StartDate','TermMonths','Payout','Account','Note','Closed'],
     BudgetLog: ['ID','Kind','Category','Account','Amount','From'],
     CardPay: ['ID','Card','Date','Amount','TxID','Note'],
-    CardPlans: ['ID','Card','Item','Total','Months','Start','Note','Closed']
+    CardPlans: ['ID','Card','Item','Total','Months','Start','Note','Closed'],
+    Trips: ['ID','Name','Destination','Start','End','Account','PerHead','Status','Note'],
+    TripMembers: ['ID','TripID','Name','Expected','Phone','Note'],
+    TripPay: ['ID','TripID','Member','Date','Amount','Account','Kind','Note'],
+    TripBudget: ['ID','TripID','Item','Category','Amount','Note'],
+    TripExp: ['ID','TripID','Date','Item','Category','Amount','Account','BudgetItem','Kind','Member','Status','Note']
   };
-  const VER = 'v19';
+  const VER = 'v20';
   const LS = window.localStorage;
   const cfg = () => ({ url: LS.getItem('mm_url') || '', key: LS.getItem('mm_key') || '' });
   const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -149,6 +155,7 @@
       if (name === 'Transactions' && row && String(row.Photo).indexOf('pending-') === 0) cancelPhoto(row.Photo);
       if (name === 'Transactions') { dropWhere('LoanPayments', 'TxID', id); dropWhere('CardPay', 'TxID', id); }
       dropWhere(name, 'ID', id);
+      if (name === 'Trips') ['TripMembers', 'TripPay', 'TripBudget', 'TripExp'].forEach(n => dropWhere(n, 'TripID', id));
       if (name === 'Loans') dropWhere('LoanPayments', 'LoanID', id);
       if (name === 'Assets') { dropWhere('InvTx', 'AssetID', id); dropWhere('Prices', 'AssetID', id); }
     },
@@ -564,6 +571,7 @@ body[data-anim="off"] .ov-r.today{background:rgba(234,88,12,.12)}
 .catchip.more{border-style:dashed;color:var(--acc)}
 .nsug{display:flex;gap:6px;flex-wrap:wrap;margin:-4px 0 10px}
 .nchip{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:99px;padding:5px 12px;font-size:13.5px}
+.tk{display:grid;grid-template-columns:1fr 1fr;gap:10px}.tk>div{background:var(--bg);border-radius:12px;padding:10px 12px}.tk span{display:block;font-size:12px;color:var(--mute)}.tk b{font-size:17px}
 .qchips{-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;overflow-y:hidden;touch-action:pan-x pan-y;display:flex;gap:8px;overflow-x:auto;margin:10px -2px 2px;padding:2px;scrollbar-width:none}.qchips::-webkit-scrollbar{display:none}
 .qc{flex:none;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:99px;padding:6px 13px;font-size:13.5px}
 .qc.on{background:var(--acc);color:#fff;border-color:var(--acc)}
@@ -640,6 +648,7 @@ input,select{display:block;width:100%;margin-top:4px;padding:12px;font-size:16px
 .pill{background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:13px;max-width:62%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
 .rcv{display:inline-block;background:rgba(15,118,110,.14);color:var(--inc);border:1px solid var(--inc);border-radius:999px;padding:3px 12px;font-size:13px}
 .rcv b{color:var(--inc)}
+.rcv.trip{background:rgba(124,58,237,.12);color:#7c3aed;border-color:#7c3aed}.rcv.trip b{color:#7c3aed}
 .rcv.ow{background:rgba(194,65,12,.12);color:var(--exp);border-color:var(--exp)}
 .rcv.ow b{color:var(--exp)}
 .srow{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
@@ -672,7 +681,7 @@ svg text{fill:var(--mute)}
 /* Base currency LKR. Budgets, goals and totals are in LKR.
    USD accounts keep their balance in USD. Every USD transaction stores the rate used,
    and every rate update is saved as a new row in the Rates sheet (history is never overwritten). */
-let D = {Categories:[],Accounts:[],Transactions:[],Goals:[],Settings:[],Rates:[],Loans:[],LoanPayments:[],AccBudgets:[],Assets:[],InvTx:[],Prices:[],BudgetLog:[],CardPay:[],CardPlans:[]};
+let D = {Categories:[],Accounts:[],Transactions:[],Goals:[],Settings:[],Rates:[],Loans:[],LoanPayments:[],AccBudgets:[],Assets:[],InvTx:[],Prices:[],BudgetLog:[],CardPay:[],CardPlans:[],Trips:[],TripMembers:[],TripPay:[],TripBudget:[],TripExp:[]};
 let homeAcct = null, booted = false;     // homeAcct null = not chosen yet, use the default account
 let homeOpen = null, stmtFrom = null, moreEdit = false;
 let tab = 'home', M = null, homeAll = false, reorder = false, sub = null, invKind = 'Unit Trust', budAcct = null, stmtAcc = null, stmtShown = 40, showSettled = false, reopen = null;
@@ -691,7 +700,7 @@ const PAL = ['#0f766e','#c2410c','#2563eb','#a21caf','#ca8a04','#0891b2','#dc262
 const byOrder = (a, b) => (+a.Order || 1e9) - (+b.Order || 1e9);
 
 function setData(d) {
-  D = Object.assign({Settings: [], Rates: [], Loans: [], LoanPayments: [], AccBudgets: [], Assets: [], InvTx: [], Prices: [], BudgetLog: [], CardPay: [], CardPlans: []}, d);
+  D = Object.assign({Settings: [], Rates: [], Loans: [], LoanPayments: [], AccBudgets: [], Assets: [], InvTx: [], Prices: [], BudgetLog: [], CardPay: [], CardPlans: [], Trips: [], TripMembers: [], TripPay: [], TripBudget: [], TripExp: []}, d);
   D.Categories.sort(byOrder); D.Accounts.sort(byOrder);
 }
 function call(fn, ...args) {
@@ -757,6 +766,8 @@ function entries(a) {          // every movement on this account: transactions, 
   });
   D.InvTx.forEach(t => { if (t.Account === a.Name) e.push({d: t.Date, s: s++, amt: (t.Type === 'Buy' ? -1 : 1) * (+t.Amount || 0), k: 'inv', r: t}); });
   D.CardPay.forEach(p => { if (p.Card === a.Name) e.push({d: p.Date, s: s++, amt: +p.Amount || 0, k: 'cardpay', r: p}); });
+  D.TripPay.forEach(p => { if (p.Account === a.Name) e.push({d: p.Date, s: s++, amt: (p.Kind === 'Refund' ? -1 : 1) * (+p.Amount || 0), k: 'trippay', r: p}); });
+  D.TripExp.forEach(x => { if (x.Account === a.Name && x.Status !== 'Agreed') e.push({d: x.Date, s: s++, amt: -(+x.Amount || 0), k: 'tripexp', r: x}); });
   return e;
 }
 const own = a => (+a.Opening || 0) + sum(entries(a), x => x.amt);   // balance in the account's own currency
@@ -908,7 +919,8 @@ function home() {
   const tx = mTx().filter(t => !names || names.has(t.Type === 'Transfer' && isInTag(t) ? t.ToAccount : t.Account));
   const inc = sum(tx.filter(isInTag), val);
   const exp = sum(tx.filter(isOut), lkr);
-  const worth = a ? totalLkr(a) : sum(roots(), totalLkr);
+  const tripHeld = a ? tripNetAcct(a.Name) : tripNetAll();                    // money in the account that belongs to trips
+  const worth = (a ? totalLkr(a) : sum(roots(), totalLkr)) - tripHeld;
   const num = x => Math.abs(+x) >= 1e6 ? short(x) : n0(x);
   const bud = c => a ? sum(Array.from(names), n => accBud(c.Name, n, month)) : catBud(c, month);
   const got = c => sum(tx.filter(t => (c.Type === 'Expense' ? isOut(t) : isInTag(t)) && t.Category === c.Name), val);
@@ -950,6 +962,7 @@ function home() {
     ${rec > 0.005 || owe > 0.005 ? `<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
       ${rec > 0.005 ? `<span class="rcv" onclick="${goLoans}">💰 To receive <b>${n0(rec)}</b></span>` : ''}
       ${owe > 0.005 ? `<span class="rcv ow" onclick="${goLoans}">You owe <b>${n0(owe)}</b></span>` : ''}</div>` : ''}
+    ${activeTrips().length ? `<div style="margin-top:8px"><span class="rcv trip" onclick="openTrips()">✈ Trip balance <b>${n0(sum(activeTrips(), t => tripStats(t).balance))}</b></span><span class="mute" style="font-size:12px;margin-left:8px">kept separate from your balance</span></div>` : ''}
   </div>
   <h2>Expenses</h2>
   <div class="card tight">
@@ -1180,6 +1193,8 @@ function describe(e) {
     if (r.Type === 'Transfer') return {title: 'Transfer to ' + r.ToAccount, sub: [r.Category && 'counts to ' + r.Category, r.Note].filter(Boolean).join(' · '), go: `editTx('${r.ID}')`};
     return {title: r.Category || r.Type, sub: r.Note || '', go: `editTx('${r.ID}')`};
   }
+  if (e.k === 'trippay') return {title: '✈ ' + tripName(r.TripID) + ' · ' + (r.Member || ''), sub: r.Kind === 'Refund' ? 'Refund to member' : 'Trip collection', go: `openTrip('${r.TripID}')`};
+  if (e.k === 'tripexp') return {title: '✈ ' + tripName(r.TripID) + ' · ' + (r.Item || ''), sub: r.Kind === 'Booking' ? 'Booking fee' : 'Trip expense', go: `openTrip('${r.TripID}')`};
   if (e.k === 'cardpay') return {title: 'Payment received', sub: r.Note || '', go: r.TxID ? `editTx('${r.TxID}')` : ''};
   if (e.k === 'txin') return {title: 'Transfer from ' + r.Account, sub: r.Note || '', go: `editTx('${r.ID}')`};
   if (e.k === 'loan') return {title: (r.Direction === 'Lent' ? 'Lent to ' : 'Borrowed from ') + r.Person, sub: r.Note || '', go: `showLoan('${r.ID}')`};
@@ -1287,7 +1302,7 @@ function accRow(a, nested, col) {
   const c = cur(a), t = own(a), tg = +a.Target || 0;
   return `<div class="ac-r ${nested ? 'nest' : ''}" onclick="openStmt('${a.ID}')"><span class="ac-ic" style="--t:${col || accTint(a)}">${accIc(a)}</span>
     <div class="ac-n"><b>${esc(a.Name)}</b><small>${esc(a.Type || '')}${c === 'USD' ? ' · USD' : ''}</small></div>
-    <div class="ac-b"><b class="${t < 0 ? 'warn' : ''}">${c === 'USD' ? fmtC(t, 'USD') : num(t)}</b>${c === 'USD' ? `<small>≈ ${num(t * rateOf('USD'))}</small>` : ''}</div></div>
+    <div class="ac-b"><b class="${t < 0 ? 'warn' : ''}">${c === 'USD' ? fmtC(t, 'USD') : num(t)}</b>${c === 'USD' ? `<small>≈ ${num(t * rateOf('USD'))}</small>` : ''}${Math.abs(tripNetAcct(a.Name)) > 0.5 ? `<small style="color:#7c3aed">✈ trip ${num(tripNetAcct(a.Name))}</small>` : ''}</div></div>
     ${tg > 0 ? `<div style="padding:0 0 10px 50px"><div class="row mute" style="font-size:12px"><span>Target ${num(tg)}</span><span>${Math.max(0, t / tg * 100).toFixed(0)}%</span></div>${progress(t, tg, 'thin')}</div>` : ''}`;
 }
 function acc() {
@@ -1306,7 +1321,7 @@ function acc() {
     return `<div class="ac-card" style="${st}"><div class="ac-gh" onclick="openStmt('${a.ID}')"><span class="ac-ic" style="--t:${col[0]}">${accIc(a)}</span><b style="color:${col[0]}">${esc(a.Name)}</b><span class="ac-tot">${fmt(totalLkr(a))}</span></div>
       ${ownBal ? accRow(a, true, col[0]) : ''}${ks.map(k => accRow(k, true, col[0])).join('')}</div>`;
   };
-  return `<div class="hero"><div class="hsm">Net worth</div><div class="big">${fmt(sum(roots(), totalLkr))}</div>
+  return `<div class="hero"><div class="hsm">Net worth${Math.abs(tripNetAll()) > 0.5 ? ' (without trip funds)' : ''}</div><div class="big">${fmt(sum(roots(), totalLkr) - tripNetAll())}</div>
     <div class="hchips">${Object.keys(byType).map(k => `<span class="hchip">${accIc({Type: k})} ${esc(k)} ${short(byType[k])}</span>`).join('')}</div>
     <div class="hsm" style="margin-top:10px">USD buy ${n2(buyRate())} · sell ${n2(sellRate())}${lr ? ' · ' + esc(lr.Date) : ''}</div>
     <div style="margin-top:4px"><span class="lnk" onclick="editRates()">Update rate</span><span class="lnk" onclick="showRates()">History</span></div></div>
@@ -1536,10 +1551,309 @@ function settingsScreen() {
   ${typeof mmSettings === 'function' ? row('☁', 'Sync', 'Web App URL and access key. Tap to sync now', 'mmSettings()') : ''}`;
 }
 function editName() { openForm('Your name', 'x', [{k: 'Name', l: 'First name'}], {Name: getSet('UserName') || ''}, {noDelete: true, submit: o => { setSet('UserName', o.Name); render(); }}); }
+/* ---------- trips: group trip planning (you are the organizer) ---------- */
+const TRIP_CATS = ['Transport', 'Accommodation', 'Food', 'Tickets / activities', 'Shopping', 'Booking', 'Insurance / visa', 'Other'];
+const CASH = 'Cash / other (not from an account)', NOACC = '(not chosen)';
+let tripId = null, tripTab = 'sum', tripOpenExp = null;
+const trips = () => D.Trips || [];
+const activeTrips = () => trips().filter(t => t.Status !== 'Closed');
+const tripName = id => { const t = trips().find(x => x.ID === id); return t ? t.Name : 'Trip'; };
+function tripNetAcct(name) {                               // trip money sitting in one of your accounts (open trips only)
+  const ids = new Set(activeTrips().map(t => t.ID)); let v = 0;
+  D.TripPay.forEach(p => { if (ids.has(p.TripID) && p.Account === name) v += (p.Kind === 'Refund' ? -1 : 1) * (+p.Amount || 0); });
+  D.TripExp.forEach(e => { if (ids.has(e.TripID) && e.Account === name && e.Status !== 'Agreed') v -= +e.Amount || 0; });
+  return v;
+}
+const tripNetAll = () => sum(D.Accounts, a => tripNetAcct(a.Name));
+function tripStats(t) {
+  const ms = D.TripMembers.filter(m => m.TripID === t.ID), pays = D.TripPay.filter(p => p.TripID === t.ID), exps = D.TripExp.filter(e => e.TripID === t.ID), bud = D.TripBudget.filter(b => b.TripID === t.ID);
+  const per = +t.PerHead || 0, sgn2 = p => (p.Kind === 'Refund' ? -1 : 1) * (+p.Amount || 0);
+  const rows = ms.map(m => {
+    const base = +m.Expected > 0 ? +m.Expected : per, extra = sum(exps.filter(e => e.Kind === 'Member' && e.Member === m.Name), e => e.Amount);
+    const paid = sum(pays.filter(p => p.Member === m.Name), sgn2), due = base + extra;
+    return {m, base, extra, due, paid, out: due - paid};
+  });
+  const paidExp = exps.filter(e => e.Status !== 'Agreed'), spent = sum(paidExp, e => e.Amount), collected = sum(pays, sgn2);
+  const budRows = bud.map(b => { const sp = sum(paidExp.filter(e => e.BudgetItem === b.Item), e => e.Amount); return {b, spent: sp, left: (+b.Amount || 0) - sp}; });
+  const byCat = {}; paidExp.forEach(e => { const k = e.Category || 'Other'; byCat[k] = (byCat[k] || 0) + (+e.Amount || 0); });
+  return {ms, pays, exps, bud, rows, spent, collected, balance: collected - spent, expected: sum(rows, r => r.due), toCollect: sum(rows, r => Math.max(0, r.out)),
+    budget: sum(bud, b => b.Amount), budRows, unbud: sum(paidExp.filter(e => !e.BudgetItem || !bud.some(b => b.Item === e.BudgetItem)), e => e.Amount),
+    agreed: sum(exps.filter(e => e.Status === 'Agreed'), e => e.Amount), booking: sum(paidExp.filter(e => e.Kind === 'Booking'), e => e.Amount),
+    stillToPay: sum(budRows, r => Math.max(0, r.left)), byCat, otherPaid: sum(pays.filter(p => !ms.some(m => m.Name === p.Member)), sgn2)};
+}
+function openTrips() { tab = 'more'; sub = 'trips'; tripId = null; reorder = false; render(); window.scrollTo(0, 0); }
+function openTrip(id) { tab = 'more'; sub = 'trips'; tripId = id; tripTab = 'sum'; reorder = false; render(); window.scrollTo(0, 0); }
+const tripDates = t => { const a = parseD(t.Start), b = parseD(t.End); return a ? shortDate(a) + (b ? ' – ' + shortDate(b) : '') : ''; };
+const tripWhen = t => { const a = parseD(t.Start), b = parseD(t.End); if (!a) return ''; const n = daysTo(a); if (n > 0) return 'starts in ' + n + (n === 1 ? ' day' : ' days'); if (b && daysTo(b) >= 0) return 'on the trip now'; return b ? 'finished' : ''; };
+const accOpts = () => [CASH].concat(lkrAccs());
+const accVal = v => v === CASH ? '' : v;
+const accLab = v => v ? v : CASH;
+function tripsScreen() { return tripId ? tripDetail() : tripList(); }
+
+function tripList() {
+  const card = t => { const st = tripStats(t);
+    return `<div class="card tight" onclick="openTrip('${t.ID}')" style="border-left:5px solid #7c3aed"><div class="row"><b style="font-size:17px">${esc(t.Name)}</b><span class="chip">${esc(t.Status || 'Planning')}</span></div>
+      <div class="mute" style="font-size:13px">${esc(t.Destination || '')}${t.Destination && tripDates(t) ? ' · ' : ''}${esc(tripDates(t))}${tripWhen(t) ? ' · ' + tripWhen(t) : ''}</div>
+      <div class="kpi" style="margin-top:8px"><div><span>Members</span><b>${st.ms.length}</b></div><div><span>Collected</span><b class="inc">${short(st.collected)}</b></div><div><span>Spent</span><b class="exp">${short(st.spent)}</b></div><div><span>Balance</span><b class="${st.balance < 0 ? 'warn' : ''}">${short(st.balance)}</b></div></div>
+      ${st.expected > 0 ? `<div style="margin-top:6px">${progress(st.collected, st.expected, 'thin')}<div class="mute" style="font-size:12px;margin-top:3px">Collected ${fmt(st.collected)} of ${fmt(st.expected)}</div></div>` : ''}</div>`; };
+  const act = activeTrips(), done = trips().filter(t => t.Status === 'Closed');
+  return `<div class="back" onclick="sub=null;render()">‹ More</div><h1>✈️ Trips</h1>
+  <div class="mute" style="margin:-6px 0 10px">Plan group trips as the organizer. Members' money is kept apart from your own balance.</div>
+  ${act.length ? act.map(card).join('') : '<div class="empty">No trips yet.<br>Tap “New trip” to start planning.</div>'}
+  <button class="btn" onclick="editTrip()" style="margin-top:6px">＋ New trip</button>
+  ${done.length ? `<h2>Closed trips</h2>${done.map(t => `<div class="card tight" style="opacity:.75" onclick="openTrip('${t.ID}')"><div class="row"><b>${esc(t.Name)}</b><span class="mute">${esc(tripDates(t))}</span></div></div>`).join('')}` : ''}`;
+}
+
+function tripDetail() {
+  const t = trips().find(x => x.ID === tripId); if (!t) { tripId = null; return tripList(); }
+  const st = tripStats(t), seg = [['sum', 'Summary'], ['mem', 'Members'], ['bud', 'Budget'], ['exp', 'Expenses'], ['itm', 'Items']];
+  const body = {sum: tripSummary, mem: tripMembersTab, bud: tripBudgetTab, exp: tripExpTab, itm: tripItemsTab}[tripTab](t, st);
+  return `<div class="back" onclick="tripId=null;render();window.scrollTo(0,0)">‹ Trips</div>
+  <div class="hero" style="background:linear-gradient(135deg,#5b21b6,#7c3aed)"><div class="row"><div class="hsm">${esc(t.Destination || 'Trip')}</div><span class="lnk" onclick="editTrip('${t.ID}')">Edit</span></div>
+    <div class="big" style="font-size:24px;margin:2px 0 4px">${esc(t.Name)}</div>
+    <div class="hchips"><span class="hchip">${esc(tripDates(t) || 'No dates yet')}</span>${tripWhen(t) ? `<span class="hchip">${tripWhen(t)}</span>` : ''}<span class="hchip">${st.ms.length} member${st.ms.length === 1 ? '' : 's'}</span><span class="hchip">${esc(t.Status || 'Planning')}</span></div></div>
+  <div class="seg" style="font-size:12px">${seg.map(x => `<button class="${tripTab === x[0] ? 'on' : ''}" style="padding:8px 2px" onclick="tripTab='${x[0]}';render()">${x[1]}</button>`).join('')}</div>${body}`;
+}
+
+function tripSummary(t, st) {
+  const cats = Object.keys(st.byCat).map(k => [k, st.byCat[k]]).sort((a, b) => b[1] - a[1]);
+  return `<div class="card"><div class="tk">
+      <div><span>Collected</span><b class="inc">${fmt(st.collected)}</b></div><div><span>Still to collect</span><b class="${st.toCollect > 0.5 ? 'warn' : ''}">${fmt(st.toCollect)}</b></div>
+      <div><span>Spent so far</span><b class="exp">${fmt(st.spent)}</b></div><div><span>Trip balance</span><b class="${st.balance < 0 ? 'warn' : ''}">${fmt(st.balance)}</b></div>
+      <div><span>Budget</span><b>${fmt(st.budget)}</b></div><div><span>Budget left to pay</span><b>${fmt(st.stillToPay)}</b></div></div>
+    ${st.balance < -0.5 ? `<div class="warn" style="font-size:13px;margin-top:8px">Spent ${fmt(-st.balance)} more than collected.</div>` : ''}</div>
+  ${st.expected > 0 ? `<div class="card tight"><div class="row"><b>Collections</b><span class="mute">${fmt(st.collected)} of ${fmt(st.expected)}</span></div>${progress(st.collected, st.expected, 'thin')}</div>` : ''}
+  ${st.budget > 0 ? `<div class="card tight"><div class="row"><b>Spending vs budget</b><span class="mute">${fmt(st.spent)} of ${fmt(st.budget)}</span></div>${progress(st.spent, st.budget, 'thin', true)}</div>` : ''}
+  ${st.booking > 0 || st.agreed > 0 ? `<div class="card tight">${st.booking > 0 ? `<div class="row"><span class="mute">Booking fees paid</span><b>${fmt(st.booking)}</b></div>` : ''}${st.agreed > 0 ? `<div class="row" style="margin-top:4px"><span class="mute">Member items agreed, not bought yet</span><b>${fmt(st.agreed)}</b></div>` : ''}</div>` : ''}
+  ${cats.length ? `<h2>Spending by category</h2><div class="card tight">${cats.map(c => `<div style="margin:6px 0"><div class="row"><span>${esc(c[0])}</span><b>${fmt(c[1])}</b></div>${progress(c[1], cats[0][1], 'thin')}</div>`).join('')}</div>` : ''}
+  <div class="btns" style="margin-top:10px"><button class="btn" onclick="tripReport('${t.ID}')">📄 Share PDF report</button></div>
+  <div class="mute" style="font-size:12px;margin-top:8px">Collections go into ${esc(t.Account || 'the account you choose on each payment')}. That money shows under “Trip balance” on Home and is left out of your own balance. Set the trip to “Closed” when everything is settled.</div>`;
+}
+
+function tripMembersTab(t, st) {
+  const card = r => `<div class="card tight" onclick="memberSheet('${r.m.ID}')"><div class="row"><b>${esc(r.m.Name)}</b><b>${fmt(r.paid)} <span class="mute" style="font-weight:400">/ ${fmt(r.due)}</span></b></div>${progress(r.paid, r.due, 'thin')}
+    <div class="row mute" style="font-size:12px;margin-top:3px"><span>${r.extra > 0 ? 'includes items ' + fmt(r.extra) : 'share ' + fmt(r.base)}</span><span class="${r.out > 0.5 ? 'warn' : 'inc'}">${r.out > 0.5 ? 'Owes ' + fmt(r.out) : r.out < -0.5 ? 'Overpaid ' + fmt(-r.out) : 'Paid in full ✓'}</span></div></div>`;
+  return `${st.rows.length ? st.rows.map(card).join('') : '<div class="empty">No members yet.<br>Add the people joining the trip.</div>'}
+  ${Math.abs(st.otherPaid) > 0.5 ? `<div class="card tight"><div class="row"><span class="mute">Payments from removed members</span><b>${fmt(st.otherPaid)}</b></div></div>` : ''}
+  <div class="actions" style="grid-template-columns:1fr 1fr;margin-top:6px"><button onclick="editMember(null)">＋ Member</button><button onclick="editTripPay(null)">＋ Payment received</button></div>
+  ${st.pays.length ? `<h2>Payments received</h2><div class="card tight">${st.pays.slice().sort((a, b) => String(b.Date) < String(a.Date) ? -1 : 1).map(p => `<div class="row" style="padding:7px 0;border-top:1px solid var(--line)" onclick="editTripPay('${p.ID}')"><span style="min-width:0"><span class="mute">${esc(String(p.Date).slice(5))}</span> ${esc(p.Member)}${p.Kind === 'Refund' ? ' <span class="chip bad">refund</span>' : ''}${p.Note ? ` <span class="mute" style="font-size:12px">· ${esc(p.Note)}</span>` : ''}</span><b class="${p.Kind === 'Refund' ? 'exp' : 'inc'}">${p.Kind === 'Refund' ? '−' : '+'} ${fmt(p.Amount)}</b></div>`).join('')}</div>` : ''}`;
+}
+
+function tripBudgetTab(t, st) {
+  const row = r => { const pc = r.b.Amount > 0 ? r.spent / r.b.Amount * 100 : 0;
+    return `<div class="card tight" onclick="editBud('${r.b.ID}')"><div class="row"><b>${esc(r.b.Item)}</b><b>${fmt(r.b.Amount)}</b></div>${progress(r.spent, r.b.Amount, 'thin', true)}
+      <div class="row mute" style="font-size:12px;margin-top:3px"><span>${esc(r.b.Category || '')} · spent ${fmt(r.spent)}</span><span style="color:${spendColor(pc)};font-weight:600">${r.left < -0.5 ? 'Over by ' + fmt(-r.left) : 'Left ' + fmt(r.left)}</span></div></div>`; };
+  return `<div class="card tight"><div class="row"><span class="mute">Total budget</span><b>${fmt(st.budget)}</b></div><div class="row" style="margin-top:4px"><span class="mute">Spent on budgeted items</span><b>${fmt(st.spent - st.unbud)}</b></div>
+    <div class="row" style="margin-top:4px"><span class="mute">Still to pay (budget left)</span><b>${fmt(st.stillToPay)}</b></div>${st.unbud > 0.5 ? `<div class="row" style="margin-top:4px"><span class="mute">Spent outside the budget list</span><b>${fmt(st.unbud)}</b></div>` : ''}</div>
+  ${st.budRows.length ? st.budRows.map(row).join('') : '<div class="empty">No budget items yet.<br>Add hotel, transport, food… with the planned amount.</div>'}
+  <button class="btn" onclick="editBud(null)" style="margin-top:6px">＋ Budget item</button>`;
+}
+
+function tripExpTab(t, st) {
+  const l = st.exps.filter(e => e.Kind !== 'Member' || e.Status !== 'Agreed').slice().sort((a, b) => String(b.Date) < String(a.Date) ? -1 : 1);
+  const row = e => `<div class="row" style="padding:8px 0;border-top:1px solid var(--line)" onclick="editTripExp('${e.ID}')"><div style="min-width:0"><b style="font-weight:600">${esc(e.Item)}</b>${e.Kind === 'Booking' ? ' <span class="chip">booking</span>' : ''}${e.Kind === 'Member' ? ` <span class="chip">${esc(e.Member)}</span>` : ''}<div class="mute" style="font-size:12px">${esc(String(e.Date).slice(5))} · ${esc(e.Category || '')}${e.BudgetItem ? ' · ' + esc(e.BudgetItem) : ''}${e.Note ? ' · ' + esc(e.Note) : ''}</div></div><b class="exp" style="white-space:nowrap">${fmt(e.Amount)}</b></div>`;
+  return `<div class="card tight"><div class="row"><span class="mute">Spent so far</span><b class="exp">${fmt(st.spent)}</b></div>${st.booking > 0 ? `<div class="row" style="margin-top:4px"><span class="mute">of which booking fees</span><b>${fmt(st.booking)}</b></div>` : ''}</div>
+  <div class="card tight">${l.length ? l.map(row).join('') : '<div class="mute" style="padding:6px 0">No expenses yet.</div>'}</div>
+  <button class="btn" onclick="editTripExp(null)">＋ Expense / booking fee</button>`;
+}
+
+function tripItemsTab(t, st) {
+  const l = st.exps.filter(e => e.Kind === 'Member'), by = {};
+  l.forEach(e => { (by[e.Member] = by[e.Member] || []).push(e); });
+  const names = Object.keys(by);
+  const row = e => `<div class="row" style="padding:8px 0;border-top:1px solid var(--line)"><div style="min-width:0" onclick="editTitem('${e.ID}')"><b style="font-weight:600">${esc(e.Item)}</b>${e.Note ? `<div class="mute" style="font-size:12px">${esc(e.Note)}</div>` : ''}</div>
+      <div style="text-align:right;white-space:nowrap"><b>${fmt(e.Amount)}</b><br>${e.Status === 'Agreed' ? `<span class="chip soon" onclick="markBought('${e.ID}')">Agreed · tap if bought</span>` : '<span class="chip ok">Bought ✓</span>'}</div></div>`;
+  return `<div class="mute" style="margin-bottom:8px">Things a member asked you to buy with the trip money, for example a JBL speaker. The amount is added to that member's share.</div>
+  ${names.length ? names.map(n => `<div class="card tight"><div class="row"><b>${esc(n)}</b><span class="mute">${fmt(sum(by[n], e => e.Amount))}</span></div>${by[n].map(row).join('')}</div>`).join('') : '<div class="empty">No member items yet.</div>'}
+  <button class="btn" onclick="editTitem(null)" style="margin-top:6px">＋ Member item</button>`;
+}
+
+function memberSheet(mid) {
+  const t = trips().find(x => x.ID === tripId), st = tripStats(t), r = st.rows.find(x => x.m.ID === mid); if (!r) return;
+  M = null;
+  const pays = st.pays.filter(p => p.Member === r.m.Name).sort((a, b) => String(b.Date) < String(a.Date) ? -1 : 1), items = st.exps.filter(e => e.Kind === 'Member' && e.Member === r.m.Name);
+  $('#sheet').innerHTML = `<h3>${esc(r.m.Name)}${r.m.Phone ? ` <span class="mute" style="font-size:13px">· ${esc(r.m.Phone)}</span>` : ''}</h3>
+    <div class="kpi"><div><span>Share</span><b>${fmt(r.base)}</b></div><div><span>Items</span><b>${fmt(r.extra)}</b></div><div><span>Paid</span><b class="inc">${fmt(r.paid)}</b></div><div><span>${r.out < -0.5 ? 'Overpaid' : 'Owes'}</span><b class="${r.out > 0.5 ? 'warn' : ''}">${fmt(Math.abs(r.out))}</b></div></div>
+    ${pays.length ? `<div class="mute" style="font-size:12px;margin:10px 0 2px">Payments</div>${pays.map(p => `<div class="row" style="padding:5px 0"><span class="mute">${esc(String(p.Date).slice(5))}${p.Note ? ' · ' + esc(p.Note) : ''}</span><b>${p.Kind === 'Refund' ? '−' : ''}${fmt(p.Amount)}</b></div>`).join('')}` : ''}
+    ${items.length ? `<div class="mute" style="font-size:12px;margin:10px 0 2px">Items</div>${items.map(e => `<div class="row" style="padding:5px 0"><span>${esc(e.Item)} <span class="mute">· ${e.Status === 'Agreed' ? 'agreed' : 'bought'}</span></span><b>${fmt(e.Amount)}</b></div>`).join('')}` : ''}
+    <div class="btns" style="margin-top:12px"><button class="btn" onclick="closeM();editTripPay(null,'${esc(r.m.Name).replace(/'/g, "\\'")}')">＋ Payment received</button><button class="btn ghost" onclick="closeM();editMember('${r.m.ID}')">Edit member</button><button class="btn ghost" onclick="closeM()">Close</button></div>`;
+  $('#bd').style.display = 'block'; $('#sheet').style.display = 'block';
+}
+
+/* ----- trip forms ----- */
+function editTrip(id) {
+  const nid = id ? '' : rid(), def = defAcct() || (lkrAccs()[0] || '');
+  const v = id ? Object.assign({}, trips().find(x => x.ID === id), {Account: trips().find(x => x.ID === id).Account || NOACC}) : {Status: 'Planning', Account: def || NOACC};
+  openForm(id ? 'Edit trip' : 'New trip', 'Trips', [
+    {k:'Name', l:'Trip name (e.g. Ella weekend)', req:true}, {k:'Destination', l:'Destination'},
+    {k:'Start', l:'Start date', t:'date'}, {k:'End', l:'End date', t:'date'},
+    {k:'Account', l:'Collect members\u2019 money into (your account)', t:'select', o:[NOACC].concat(lkrAccs())},
+    {k:'PerHead', l:'Amount each member pays (LKR)', t:'number'},
+    {k:'Status', l:'Status (Closed = settled, trip money no longer held)', t:'select', o:['Planning', 'Ongoing', 'Done', 'Closed']},
+    {k:'Note', l:'Note'}
+  ], v, {prep: o => { if (!o.ID) o.ID = nid; }, submit: o => { o.Account = o.Account === NOACC ? '' : o.Account; call('save', 'Trips', o); if (nid) { tripId = nid; tripTab = 'sum'; } }});
+}
+function editMember(id) {
+  const v = id ? D.TripMembers.find(x => x.ID === id) : {TripID: tripId};
+  openForm(id ? 'Edit member' : 'New member', 'TripMembers', [
+    {k:'Name', l:'Member name', req:true}, {k:'Expected', l:'Own share if different from the trip amount (0 = use the trip amount)', t:'number'},
+    {k:'Phone', l:'Phone (optional)'}, {k:'Note', l:'Note'}
+  ], v);
+}
+function editTripPay(id, member) {
+  const t = trips().find(x => x.ID === tripId), names = D.TripMembers.filter(m => m.TripID === tripId).map(m => m.Name);
+  if (!names.length) { alert('Add the members first.'); return; }
+  const v = id ? Object.assign({}, D.TripPay.find(x => x.ID === id), {Account: accLab(D.TripPay.find(x => x.ID === id).Account)}) : {TripID: tripId, Member: member || names[0], Date: today(), Account: accLab(t.Account), Kind: 'Collection'};
+  openForm(id ? 'Edit payment' : 'Payment received', 'TripPay', [
+    {k:'Member', l:'From', t:'select', o:names}, {k:'Amount', l:'Amount (LKR)', t:'calc', req:true}, {k:'Date', l:'Date', t:'date'},
+    {k:'Account', l:'Received into', t:'select', o:accOpts()}, {k:'Kind', l:'Type', t:'select', o:['Collection', 'Refund']}, {k:'Note', l:'Note'}
+  ], v, {submit: o => { o.Account = accVal(o.Account); call('save', 'TripPay', o); }});
+}
+function editBud(id) {
+  const v = id ? D.TripBudget.find(x => x.ID === id) : {TripID: tripId, Category: TRIP_CATS[0]};
+  openForm(id ? 'Edit budget item' : 'New budget item', 'TripBudget', [
+    {k:'Item', l:'Item (e.g. Hotel)', req:true}, {k:'Category', l:'Category', t:'select', o:TRIP_CATS}, {k:'Amount', l:'Planned amount (LKR)', t:'number', req:true}, {k:'Note', l:'Note'}
+  ], v);
+}
+function editTripExp(id) {
+  if (id) { const e = D.TripExp.find(x => x.ID === id); if (e && e.Kind === 'Member') { editTitem(id); return; } }
+  const t = trips().find(x => x.ID === tripId), bi = D.TripBudget.filter(b => b.TripID === tripId).map(b => b.Item), NONE = '(none)';
+  const e0 = id ? D.TripExp.find(x => x.ID === id) : null;
+  const v = e0 ? Object.assign({}, e0, {Account: accLab(e0.Account), BudgetItem: e0.BudgetItem || NONE, Kind: e0.Kind === 'Booking' ? 'Booking fee' : 'Expense'}) : {TripID: tripId, Date: today(), Account: accLab(t.Account), BudgetItem: NONE, Kind: 'Expense', Category: TRIP_CATS[0], Status: 'Paid', Member: ''};
+  openForm(id ? 'Edit expense' : 'New trip expense', 'TripExp', [
+    {k:'Item', l:'What was paid (e.g. Hotel booking fee)', req:true}, {k:'Kind', l:'Type', t:'select', o:['Expense', 'Booking fee']},
+    {k:'Category', l:'Category', t:'select', o:TRIP_CATS}, {k:'Amount', l:'Amount (LKR)', t:'calc', req:true}, {k:'Date', l:'Date', t:'date'},
+    {k:'Account', l:'Paid from', t:'select', o:accOpts()}, {k:'BudgetItem', l:'Counts against budget item', t:'select', o:[NONE].concat(bi)}, {k:'Note', l:'Note'}
+  ], v, {submit: o => { o.Account = accVal(o.Account); o.BudgetItem = o.BudgetItem === NONE ? '' : o.BudgetItem; o.Kind = o.Kind === 'Booking fee' ? 'Booking' : 'Expense'; o.Status = 'Paid'; o.Member = ''; call('save', 'TripExp', o); }});
+}
+function markBought(id) { editTitem(id, null, true); }
+function editTitem(id, member, bought) {
+  const t = trips().find(x => x.ID === tripId), names = D.TripMembers.filter(m => m.TripID === tripId).map(m => m.Name);
+  if (!names.length) { alert('Add the members first.'); return; }
+  const AG = 'Agreed (not bought yet)', BO = 'Bought / paid', e0 = id ? D.TripExp.find(x => x.ID === id) : null;
+  const v = e0 ? Object.assign({}, e0, {Account: accLab(e0.Account || t.Account), Status: bought || e0.Status === 'Paid' ? BO : AG, Date: bought ? today() : e0.Date}) : {TripID: tripId, Member: member || names[0], Date: today(), Account: accLab(t.Account), Status: AG, Kind: 'Member', Category: 'Member items', BudgetItem: ''};
+  openForm(id ? 'Edit member item' : 'New member item', 'TripExp', [
+    {k:'Member', l:'For member', t:'select', o:names}, {k:'Item', l:'Item (e.g. JBL speaker)', req:true}, {k:'Amount', l:'Cost (LKR)', t:'calc', req:true},
+    {k:'Status', l:'Status', t:'select', o:[AG, BO]}, {k:'Date', l:'Date bought', t:'date'}, {k:'Account', l:'Paid from (when bought)', t:'select', o:accOpts()}, {k:'Note', l:'Note'}
+  ], v, {submit: o => { o.Account = accVal(o.Account); o.Status = o.Status === BO ? 'Paid' : 'Agreed'; o.Kind = 'Member'; o.Category = 'Member items'; o.BudgetItem = ''; call('save', 'TripExp', o); }});
+}
+
+/* ----- PDF report (drawn on canvas pages, packed into a PDF: works offline, no libraries) ----- */
+let lastReport = null;
+function drawTripPages(t) {
+  const st = tripStats(t), W = 1190, H = 1684, MG = 64, CW = W - 2 * MG, FONT = '-apple-system, "Segoe UI", Helvetica, Arial, sans-serif', pages = [];
+  const org = getSet('UserName') || '', gen = new Date().toLocaleDateString(undefined, {day: 'numeric', month: 'long', year: 'numeric'});
+  let cv, g, y;
+  const newPage = () => { cv = document.createElement('canvas'); cv.width = W; cv.height = H; g = cv.getContext('2d'); g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H); pages.push(cv); y = MG; };
+  const font = (sz, w) => { g.font = (w || 400) + ' ' + sz + 'px ' + FONT; };
+  const txt = (s, x, yy, sz, w, col, al) => { font(sz, w); g.fillStyle = col || '#16302b'; g.textAlign = al || 'left'; g.textBaseline = 'alphabetic'; g.fillText(String(s), x, yy); };
+  const trunc = (s, maxW, sz, w) => { s = String(s == null ? '' : s); font(sz, w); if (g.measureText(s).width <= maxW) return s; while (s.length > 1 && g.measureText(s + '…').width > maxW) s = s.slice(0, -1); return s + '…'; };
+  const rr = (x, yy, w, h, r, fill) => { g.beginPath(); g.moveTo(x + r, yy); g.arcTo(x + w, yy, x + w, yy + h, r); g.arcTo(x + w, yy + h, x, yy + h, r); g.arcTo(x, yy + h, x, yy, r); g.arcTo(x, yy, x + w, yy, r); g.closePath(); g.fillStyle = fill; g.fill(); };
+  const num2 = x => Math.round(+x || 0).toLocaleString();
+  const bar = (label, a, b, col, right) => { need(96); txt(label, MG, y + 28, 26, 600, '#16302b'); txt(right, W - MG, y + 28, 24, 400, '#51706a', 'right'); rr(MG, y + 44, CW, 22, 11, '#e6efed'); const pc = b > 0 ? Math.max(0, Math.min(a / b, 1)) : 0; if (pc > 0) rr(MG, y + 44, Math.max(24, CW * pc), 22, 11, col); y += 96; };
+  const need = h => { if (y + h > H - 96) newPage(); };
+  const table = (title, cols, rows, totalRow) => {
+    if (!rows.length) return;
+    need(46 + 56 + 44 * 2); txt(title, MG, y + 34, 34, 700, '#5b21b6'); y += 58;
+    const xs = []; let x = MG; cols.forEach(c => { xs.push(x); x += c.w * CW; });
+    const head = () => { rr(MG, y, CW, 48, 10, '#ede9fe'); cols.forEach((c, i) => txt(c.h, c.al === 'r' ? xs[i] + c.w * CW - 14 : xs[i] + 14, y + 32, 22, 700, '#4c1d95', c.al === 'r' ? 'right' : 'left')); y += 48; };
+    head();
+    const line = (r, ri) => { if (y + 46 > H - 96) { newPage(); head(); }
+      if (ri % 2) { g.fillStyle = '#f7f5ff'; g.fillRect(MG, y, CW, 46); }
+      r.cells.forEach((cell, i) => { const c = cols[i], w = r.bold ? 700 : 400; txt(trunc(cell, c.w * CW - 28, 23, w), c.al === 'r' ? xs[i] + c.w * CW - 14 : xs[i] + 14, y + 31, 23, w, (r.color && r.color[i]) || '#16302b', c.al === 'r' ? 'right' : 'left'); });
+      y += 46; };
+    rows.forEach(line);
+    if (totalRow) { g.fillStyle = '#c4b5fd'; g.fillRect(MG, y, CW, 3); y += 3; line({cells: totalRow, bold: true}, 0); }
+    y += 36;
+  };
+  newPage();
+  // banner
+  const gr = g.createLinearGradient(MG, y, W - MG, y + 250); gr.addColorStop(0, '#5b21b6'); gr.addColorStop(1, '#8b5cf6'); rr(MG, y, CW, 250, 28, gr);
+  txt('TRIP REPORT', MG + 36, y + 52, 22, 700, 'rgba(255,255,255,.75)');
+  txt(trunc(t.Name, CW - 72, 58, 700), MG + 36, y + 120, 58, 700, '#ffffff');
+  txt(trunc([t.Destination, tripDates(t)].filter(Boolean).join('  ·  ') || 'Dates to be decided', CW - 72, 28, 400), MG + 36, y + 170, 28, 400, 'rgba(255,255,255,.92)');
+  txt((org ? 'Organizer: ' + org + '   ·   ' : '') + 'Prepared ' + gen, MG + 36, y + 218, 24, 400, 'rgba(255,255,255,.8)');
+  y += 250 + 34;
+  // summary boxes
+  const per = +t.PerHead || 0, box = [['Members', st.ms.length], ['Amount per member', per ? 'LKR ' + num2(per) : '–'], ['Total expected', 'LKR ' + num2(st.expected)],
+    ['Collected', 'LKR ' + num2(st.collected)], ['Still to collect', 'LKR ' + num2(st.toCollect)], ['Spent so far', 'LKR ' + num2(st.spent)],
+    ['Trip balance', 'LKR ' + num2(st.balance)], ['Total budget', 'LKR ' + num2(st.budget)], ['Budget left to pay', 'LKR ' + num2(st.stillToPay)]];
+  const bw = (CW - 40) / 3, colr = {3: '#0f766e', 4: st.toCollect > 0.5 ? '#b91c1c' : '#0f766e', 5: '#c2410c', 6: st.balance < 0 ? '#b91c1c' : '#16302b'};
+  box.forEach((b, i) => { const bx = MG + (i % 3) * (bw + 20), by = y + Math.floor(i / 3) * 128; rr(bx, by, bw, 112, 18, '#f4f1ff'); txt(b[0], bx + 22, by + 40, 22, 400, '#51706a'); txt(trunc(b[1], bw - 44, 33, 700), bx + 22, by + 86, 33, 700, colr[i] || '#16302b'); });
+  y += 3 * 128 + 14;
+  if (st.expected > 0) bar('Collections', st.collected, st.expected, '#0f766e', 'LKR ' + num2(st.collected) + ' of ' + num2(st.expected));
+  if (st.budget > 0) bar('Spending vs budget', st.spent, st.budget, spendColor(st.spent / st.budget * 100).replace('var(--warn)', '#b91c1c'), 'LKR ' + num2(st.spent) + ' of ' + num2(st.budget));
+  y += 10;
+  // tables
+  table('Members', [{h: 'Member', w: .34}, {h: 'Share', w: .16, al: 'r'}, {h: 'Items', w: .14, al: 'r'}, {h: 'Paid', w: .16, al: 'r'}, {h: 'Balance', w: .20, al: 'r'}],
+    st.rows.map(r => ({cells: [r.m.Name, num2(r.base), r.extra ? num2(r.extra) : '–', num2(r.paid), r.out > 0.5 ? 'owes ' + num2(r.out) : r.out < -0.5 ? 'over ' + num2(-r.out) : 'settled'], color: [null, null, null, '#0f766e', r.out > 0.5 ? '#b91c1c' : '#0f766e']})),
+    st.rows.length ? ['Total', num2(sum(st.rows, r => r.base)), num2(sum(st.rows, r => r.extra)), num2(sum(st.rows, r => r.paid)), num2(st.toCollect) + ' to collect'] : null);
+  table('Payments received', [{h: 'Date', w: .16}, {h: 'Member', w: .26}, {h: 'Note', w: .34}, {h: 'Amount (LKR)', w: .24, al: 'r'}],
+    st.pays.slice().sort((a, b) => String(a.Date) < String(b.Date) ? -1 : 1).map(p => ({cells: [String(p.Date), p.Member, (p.Kind === 'Refund' ? 'Refund. ' : '') + (p.Note || ''), (p.Kind === 'Refund' ? '-' : '') + num2(p.Amount)]})),
+    st.pays.length ? ['', 'Total collected', '', num2(st.collected)] : null);
+  table('Budget vs actual', [{h: 'Item', w: .30}, {h: 'Category', w: .22}, {h: 'Budget', w: .16, al: 'r'}, {h: 'Spent', w: .16, al: 'r'}, {h: 'Left', w: .16, al: 'r'}],
+    st.budRows.map(r => ({cells: [r.b.Item, r.b.Category || '', num2(r.b.Amount), num2(r.spent), (r.left < -0.5 ? '-' : '') + num2(Math.abs(r.left))], color: [null, null, null, null, r.left < -0.5 ? '#b91c1c' : '#0f766e']}))
+      .concat(st.budRows.length && st.unbud > 0.5 ? [{cells: ['Other spending', 'not in the budget list', '–', num2(st.unbud), '']}] : []),
+    st.budRows.length ? ['Total', '', num2(st.budget), num2(st.spent), num2(st.stillToPay) + ' still to pay'] : null);
+  const paidExp = st.exps.filter(e => e.Status !== 'Agreed').slice().sort((a, b) => String(a.Date) < String(b.Date) ? -1 : 1);
+  table('Expenses', [{h: 'Date', w: .14}, {h: 'Item', w: .34}, {h: 'Category', w: .24}, {h: 'Amount (LKR)', w: .28, al: 'r'}],
+    paidExp.map(e => ({cells: [String(e.Date), e.Item + (e.Kind === 'Booking' ? ' (booking fee)' : e.Kind === 'Member' ? ' (' + e.Member + ')' : ''), e.Category || '', num2(e.Amount)]})),
+    paidExp.length ? ['', 'Total spent', '', num2(st.spent)] : null);
+  const items = st.exps.filter(e => e.Kind === 'Member');
+  table('Member items', [{h: 'Member', w: .24}, {h: 'Item', w: .36}, {h: 'Status', w: .18}, {h: 'Cost (LKR)', w: .22, al: 'r'}],
+    items.map(e => ({cells: [e.Member, e.Item, e.Status === 'Agreed' ? 'agreed' : 'bought', num2(e.Amount)]})), items.length ? ['', 'Total', '', num2(sum(items, e => e.Amount))] : null);
+  if (t.Note) { need(120); txt('Notes', MG, y + 34, 34, 700, '#5b21b6'); y += 58; font(24, 400); String(t.Note).split('\n').forEach(ln => { let cur = ''; ln.split(' ').forEach(w => { const test = cur ? cur + ' ' + w : w; if (g.measureText(test).width > CW) { need(36); txt(cur, MG, y + 26, 24, 400, '#16302b'); y += 36; cur = w; font(24, 400); } else cur = test; }); need(36); txt(cur, MG, y + 26, 24, 400, '#16302b'); y += 36; }); }
+  pages.forEach((c, i) => { g = c.getContext('2d'); g.fillStyle = '#d9d2f5'; g.fillRect(MG, H - 80, CW, 2); txt(t.Name + ' · trip report · ' + gen, MG, H - 40, 20, 400, '#6b7f7a'); txt('Page ' + (i + 1) + ' of ' + pages.length, W - MG, H - 40, 20, 400, '#6b7f7a', 'right'); });
+  return pages;
+}
+function pagesToPdf(pages) {
+  const enc = new TextEncoder(), parts = [], offs = []; let off = 0;
+  const push = u8 => { parts.push(u8); off += u8.length; }, str = x => push(enc.encode(x));
+  push(new Uint8Array([37, 80, 68, 70, 45, 49, 46, 52, 10, 37, 226, 227, 207, 211, 10]));
+  const obj = (id, fn) => { offs[id] = off; str(id + ' 0 obj\n'); fn(); str('\nendobj\n'); }, n = pages.length;
+  obj(1, () => str('<< /Type /Catalog /Pages 2 0 R >>'));
+  obj(2, () => str('<< /Type /Pages /Count ' + n + ' /Kids [' + pages.map((_, i) => (3 + 3 * i) + ' 0 R').join(' ') + '] >>'));
+  pages.forEach((cv, i) => {
+    const b64 = cv.toDataURL('image/jpeg', 0.9).split(',')[1], bin = atob(b64), jpg = new Uint8Array(bin.length); for (let k = 0; k < bin.length; k++) jpg[k] = bin.charCodeAt(k);
+    const pid = 3 + 3 * i, cid = pid + 1, iid = pid + 2, content = 'q 595 0 0 842 0 0 cm /Im0 Do Q';
+    obj(pid, () => str('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im0 ' + iid + ' 0 R >> >> /Contents ' + cid + ' 0 R >>'));
+    obj(cid, () => str('<< /Length ' + content.length + ' >>\nstream\n' + content + '\nendstream'));
+    obj(iid, () => { str('<< /Type /XObject /Subtype /Image /Width ' + cv.width + ' /Height ' + cv.height + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + jpg.length + ' >>\nstream\n'); push(jpg); str('\nendstream'); });
+  });
+  const xref = off, total = 3 + 3 * n;
+  str('xref\n0 ' + total + '\n0000000000 65535 f \n'); for (let i = 1; i < total; i++) str(String(offs[i]).padStart(10, '0') + ' 00000 n \n');
+  str('trailer\n<< /Size ' + total + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF');
+  const out = new Uint8Array(off); let p0 = 0; parts.forEach(u => { out.set(u, p0); p0 += u.length; }); return out;
+}
+function tripReport(id) {
+  const t = trips().find(x => x.ID === id); if (!t) return;
+  $('#load').style.display = 'block';
+  setTimeout(() => {
+    try {
+      const pages = drawTripPages(t), bytes = pagesToPdf(pages);
+      lastReport = {bytes, name: ('Trip - ' + t.Name).replace(/[\\/:*?"<>|]+/g, ' ').trim() + '.pdf', title: t.Name};
+      M = null;
+      $('#sheet').innerHTML = `<h3>📄 Report ready</h3><div class="mute" style="margin-bottom:8px">${pages.length} page${pages.length === 1 ? '' : 's'} · ${(bytes.length / 1024).toFixed(0)} KB · ${esc(lastReport.name)}</div>
+        <img src="${pages[0].toDataURL('image/jpeg', 0.55)}" style="width:100%;border:1px solid var(--line);border-radius:10px">
+        <div class="btns" style="margin-top:12px"><button class="btn" onclick="shareReport()">Share with the group</button><button class="btn ghost" onclick="openReport()">Open / view</button><button class="btn ghost" onclick="saveReport()">Save to device</button><button class="btn ghost" onclick="closeM()">Close</button></div>`;
+      $('#bd').style.display = 'block'; $('#sheet').style.display = 'block';
+    } catch (e) { alert('Could not build the report: ' + e.message); }
+    $('#load').style.display = 'none';
+  }, 40);
+}
+async function shareReport() {
+  const r = lastReport; if (!r) return;
+  const file = new File([r.bytes], r.name, {type: 'application/pdf'});
+  try { if (navigator.canShare && navigator.canShare({files: [file]})) await navigator.share({files: [file], title: r.title}); else openReport(); } catch (e) { if (e && e.name !== 'AbortError') openReport(); }
+}
+function openReport() { const u = URL.createObjectURL(new Blob([lastReport.bytes], {type: 'application/pdf'})); if (!window.open(u, '_blank')) location.href = u; }
+function saveReport() { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([lastReport.bytes], {type: 'application/pdf'})); a.download = lastReport.name; document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 500); }
+
 function more() {
   if (sub === 'goals') return goals();
   if (sub === 'loans') return loans();
   if (sub === 'inv') return inv();
+  if (sub === 'trips') return tripsScreen();
   if (sub === 'tabs') return tabsScreen();
   if (sub === 'anim') return animScreen();
   if (sub === 'settings') return settingsScreen();
@@ -1550,6 +1864,7 @@ function more() {
   const items = {
     goals: ['⭐', 'Goals', D.Goals.length + (D.Goals.length === 1 ? ' goal' : ' goals')],
     loans: ['🤝', 'Loans', `Owed to you ${fmt(lent)} · You owe ${fmt(owe)}`],
+    trips: ['✈️', 'Trips', trips().length ? trips().length + (trips().length === 1 ? ' trip' : ' trips') + (activeTrips().length ? ' · ' + activeTrips().length + ' active' : '') : 'Plan a group trip'],
     inv: ['📈', 'Investments', `Unit trusts ${short(sum(D.Assets.filter(a => a.Kind === 'Unit Trust'), a => calc(a).value))} · Shares ${short(sum(D.Assets.filter(a => a.Kind === 'Share'), a => calc(a).value))} · FD ${short(sum(fds().filter(f => f.Closed !== 'Closed'), f => fdCalc(f).value))}`]
   };
   const known = Object.keys(items);
