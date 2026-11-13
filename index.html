@@ -36,9 +36,9 @@
     TripMembers: ['ID','TripID','Name','Expected','Phone','Note','Role'],
     TripPay: ['ID','TripID','Member','Date','Amount','Account','Kind','Note'],
     TripBudget: ['ID','TripID','Item','Category','Amount','Note','PerPerson','Exclude'],
-    TripExp: ['ID','TripID','Date','Item','Category','Amount','Account','BudgetItem','Kind','Member','Status','Note','Source','PaidBy','Exclude']
+    TripExp: ['ID','TripID','Date','Item','Category','Amount','Account','BudgetItem','Kind','Member','Status','Note','Source','PaidBy','Exclude','Photo']
   };
-  const VER = 'v24';
+  const VER = 'v25';
   const LS = window.localStorage;
   const cfg = () => ({ url: LS.getItem('mm_url') || '', key: LS.getItem('mm_key') || '' });
   const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -152,7 +152,7 @@
     save(name, o) { o.ID = o.ID || newId(); upsert(name, o); },
     remove(name, id) {
       const row = T()[name].find(r => r.ID === id);
-      if (name === 'Transactions' && row && String(row.Photo).indexOf('pending-') === 0) cancelPhoto(row.Photo);
+      if ((name === 'Transactions' || name === 'TripExp') && row && String(row.Photo).indexOf('pending-') === 0) cancelPhoto(row.Photo);
       if (name === 'Transactions') { dropWhere('LoanPayments', 'TxID', id); dropWhere('CardPay', 'TxID', id); }
       dropWhere(name, 'ID', id);
       if (name === 'Trips') ['TripMembers', 'TripPay', 'TripBudget', 'TripExp'].forEach(n => dropWhere(n, 'TripID', id));
@@ -252,6 +252,7 @@
           if (item.fn === 'uploadPhoto' && item.pending) {
             map[item.pending] = r;
             T().Transactions.forEach(t => { if (t.Photo === item.pending) t.Photo = r; });
+            T().TripExp.forEach(t => { if (t.Photo === item.pending) t.Photo = r; });
             delete photos[item.pending];
           }
           queue.shift(); await persist();
@@ -1734,7 +1735,7 @@ function tripBudgetTab(t, st) {
 function tripExpTab(t, st) {
   const l = st.paidExp.slice().sort((a, b) => String(b.Date) < String(a.Date) ? -1 : 1);
   const row = e => { const ex = Array.from(exclOf(st.exps, e));
-    return `<div class="row" style="padding:8px 0;border-top:1px solid var(--line)" onclick="editTripExp('${e.ID}')"><div style="min-width:0"><b style="font-weight:600">${esc(e.Item)}</b>${e.Kind === 'Booking' ? ' <span class="chip">booking</span>' : ''}${e.Kind === 'Member' ? ` <span class="chip">${esc(e.Member)}</span>` : ''}${e.Source === 'Donation' ? ' <span class="chip soon">donation fund</span>' : ''}${e.PaidBy ? ` <span class="chip ok">paid by ${esc(e.PaidBy)}</span>` : ''}
+    return `<div class="row" style="padding:8px 0;border-top:1px solid var(--line)" onclick="editTripExp('${e.ID}')"><div style="min-width:0"><b style="font-weight:600">${esc(e.Item)}</b>${e.Kind === 'Booking' ? ' <span class="chip">booking</span>' : ''}${e.Photo ? ` <span class="chip" onclick="event.stopPropagation();viewPhoto('${esc(e.Photo)}')">🧾 bill</span>` : ''}${e.Kind === 'Member' ? ` <span class="chip">${esc(e.Member)}</span>` : ''}${e.Source === 'Donation' ? ' <span class="chip soon">donation fund</span>' : ''}${e.PaidBy ? ` <span class="chip ok">paid by ${esc(e.PaidBy)}</span>` : ''}
       <div class="mute" style="font-size:12px">${esc(String(e.Date).slice(5))} · ${esc(e.Category || '')}${e.BudgetItem ? ' · ' + esc(e.BudgetItem) : ''}${ex.length ? ' · not shared with ' + esc(ex.join(', ')) : ''}${e.Note ? ' · ' + esc(e.Note) : ''}</div></div><b class="exp" style="white-space:nowrap">${fmt(e.Amount)}</b></div>`; };
   return `<div class="card tight"><div class="row"><span class="mute">Spent from member money</span><b class="exp">${fmt(st.spentColl)}</b></div>${st.spentDon > 0 ? `<div class="row" style="margin-top:4px"><span class="mute">Spent from the donation fund</span><b>${fmt(st.spentDon)}</b></div>` : ''}${st.booking > 0 ? `<div class="row" style="margin-top:4px"><span class="mute">of which booking fees</span><b>${fmt(st.booking)}</b></div>` : ''}</div>
   <div class="card tight">${l.length ? l.map(row).join('') : '<div class="mute" style="padding:6px 0">No expenses yet.</div>'}</div>
@@ -1746,7 +1747,7 @@ function tripItemsTab(t, st) {
   const l = st.exps.filter(e => e.Kind === 'Member'), by = {};
   l.forEach(e => { (by[e.Member] = by[e.Member] || []).push(e); });
   const names = Object.keys(by);
-  const row = e => `<div class="row" style="padding:8px 0;border-top:1px solid var(--line)"><div style="min-width:0" onclick="editTitem('${e.ID}')"><b style="font-weight:600">${esc(e.Item)}</b>${e.Note ? `<div class="mute" style="font-size:12px">${esc(e.Note)}</div>` : ''}</div>
+  const row = e => `<div class="row" style="padding:8px 0;border-top:1px solid var(--line)"><div style="min-width:0" onclick="editTitem('${e.ID}')"><b style="font-weight:600">${esc(e.Item)}</b>${e.Photo ? ` <span class="chip" onclick="event.stopPropagation();viewPhoto('${esc(e.Photo)}')">🧾 bill</span>` : ''}${e.Note ? `<div class="mute" style="font-size:12px">${esc(e.Note)}</div>` : ''}</div>
       <div style="text-align:right;white-space:nowrap"><b>${fmt(e.Amount)}</b><br>${e.Status === 'Agreed' ? `<span class="chip soon" onclick="markBought('${e.ID}')">Agreed · tap if bought</span>` : '<span class="chip ok">Bought ✓</span>'}</div></div>`;
   return `<div class="mute" style="margin-bottom:8px">Things a member asked you to buy with the trip money, for example a JBL speaker. The amount is added to that member's share.</div>
   ${names.length ? names.map(n => `<div class="card tight"><div class="row"><b>${esc(n)}</b><span class="mute">${fmt(sum(by[n], e => e.Amount))}</span></div>${by[n].map(row).join('')}</div>`).join('') : '<div class="empty">No member items yet.</div>'}
@@ -1842,7 +1843,7 @@ function editTripExp(id) {
     {k:'Account', l:'Money taken from (your account)', t:'select', o:accOpts()},
     {k:'PaidBy', l:'Who paid it', t:'select', o:[PB0].concat(names)},
     {k:'BudgetItem', l:'Counts against budget item', t:'select', o:[NONE].concat(bi)}, {k:'Note', l:'Note'}
-  ], v, {extra: excHtml(names, exclSet(v.Exclude)),
+  ], v, {extra: excHtml(names, exclSet(v.Exclude)) + PHOTO_HTML,
     validate: o => (o.PaidBy !== PB0 && o.Source === SRC_D) ? 'A cost paid out of a member\u2019s pocket is shared by the members. Deduct it from the member collection.' : '',
     prep: o => { o.Exclude = readExc(); },
     submit: o => {
@@ -1851,6 +1852,7 @@ function editTripExp(id) {
       if (!o.Exclude && o.BudgetItem) { const b = D.TripBudget.find(x => x.TripID === tripId && x.Item === o.BudgetItem); if (b && b.Exclude) o.Exclude = b.Exclude; }   // inherit the budget item's exclusions
       call('save', 'TripExp', o);
     }});
+  renderPhoto();
 }
 function editPrivate(id) {                                  // a member paid for themselves (not part of the trip cost)
   const names = attNames(); if (!names.length) { alert('Add the members first.'); return; }
@@ -1871,12 +1873,13 @@ function editTitem(id, member, bought) {
   openForm(id ? 'Edit member item' : 'New member item', 'TripExp', [
     {k:'Member', l:'For member', t:'select', o:names}, {k:'Item', l:'Item (e.g. JBL speaker)', req:true}, {k:'Amount', l:'Cost (LKR)', t:'calc', req:true},
     {k:'Status', l:'Status', t:'select', o:[AG, BO]}, {k:'Date', l:'Date bought', t:'date'}, {k:'Account', l:'Paid from (when bought)', t:'select', o:accOpts()}, {k:'Note', l:'Note'}
-  ], v, {submit: o => { o.Account = accVal(o.Account); o.Status = o.Status === BO ? 'Paid' : 'Agreed'; o.Kind = 'Member'; o.Category = 'Member items'; o.BudgetItem = ''; call('save', 'TripExp', o); }});
+  ], v, {extra: PHOTO_HTML, submit: o => { o.Account = accVal(o.Account); o.Status = o.Status === BO ? 'Paid' : 'Agreed'; o.Kind = 'Member'; o.Category = 'Member items'; o.BudgetItem = ''; call('save', 'TripExp', o); }});
+  renderPhoto();
 }
 
 /* ----- PDF report (drawn on canvas pages, packed into a PDF: works offline, no libraries) ----- */
 let lastReport = null;
-function drawTripPages(t) {
+function drawTripPages(t, bills) {
   const st = tripStats(t), S = tripSettle(t, st), W = 1190, H = 1684, MG = 64, CW = W - 2 * MG, FONT = '-apple-system, "Segoe UI", Helvetica, Arial, sans-serif', pages = [];
   const org = getSet('UserName') || '', gen = new Date().toLocaleDateString(undefined, {day: 'numeric', month: 'long', year: 'numeric'}), R = x => Math.round(x);
   let cv, g, y;
@@ -1971,6 +1974,21 @@ function drawTripPages(t) {
     note('How it is worked out: every shared cost is divided among the members who took part in it. A member\u2019s own items are charged to that member only. Paid = money the member handed over, plus anything they paid out of their own pocket for the trip. Result = paid minus final cost: a positive amount is refunded, a negative amount is collected.');
   }
   if (t.Note) { need(120); txt('Notes', MG, y + 34, 34, 700, '#5b21b6'); y += 58; font(24, 400); String(t.Note).split('\n').forEach(ln => { let cur = ''; ln.split(' ').forEach(w => { const test = cur ? cur + ' ' + w : w; if (g.measureText(test).width > CW) { need(36); txt(cur, MG, y + 26, 24, 400, '#16302b'); y += 36; cur = w; font(24, 400); } else cur = test; }); need(36); txt(cur, MG, y + 26, 24, 400, '#16302b'); y += 36; }); }
+  if (bills && bills.length) {                              // bills and receipts attached to the trip expenses, 4 to a page
+    newPage(); title('Bills & receipts', bills.length + ' bill' + (bills.length === 1 ? '' : 's') + ' attached to the trip expenses', '#5b21b6', '#8b5cf6');
+    const CH = 640, GAP = 24, cw = (CW - GAP) / 2; let col = 0, top = y;
+    bills.forEach(b => {
+      if (col === 0) { if (y + CH > H - 96) newPage(); top = y; }
+      const x = MG + col * (cw + GAP), e = b.e, im = b.img;
+      rr(x, top, cw, CH, 16, '#f7f5ff');
+      txt(trunc(e.Item, cw - 32, 25, 700), x + 16, top + 36, 25, 700, '#16302b');
+      txt(trunc(String(e.Date).slice(0, 10) + ' · ' + (e.Category || '') + ' · LKR ' + num2(e.Amount) + (e.Source === 'Donation' ? ' · donation fund' : ''), cw - 32, 21, 400), x + 16, top + 66, 21, 400, '#51706a');
+      const bx = x + 16, by = top + 84, bw = cw - 32, bh = CH - 100, sc = Math.min(bw / im.width, bh / im.height), dw = im.width * sc, dh = im.height * sc;
+      g.drawImage(im, bx + (bw - dw) / 2, by + (bh - dh) / 2, dw, dh);
+      col++; if (col === 2) { col = 0; y = top + CH + GAP; }
+    });
+    if (col === 1) y = top + CH + GAP;
+  }
   pages.forEach((c, i) => { g = c.getContext('2d'); g.fillStyle = '#d9d2f5'; g.fillRect(MG, H - 80, CW, 2); txt(t.Name + ' · trip report · ' + gen, MG, H - 40, 20, 400, '#6b7f7a'); txt('Page ' + (i + 1) + ' of ' + pages.length, W - MG, H - 40, 20, 400, '#6b7f7a', 'right'); });
   return pages;
 }
@@ -1993,15 +2011,30 @@ function pagesToPdf(pages) {
   str('trailer\n<< /Size ' + total + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF');
   const out = new Uint8Array(off); let p0 = 0; parts.forEach(u => { out.set(u, p0); p0 += u.length; }); return out;
 }
-function tripReport(id) {
+const billCache = {};
+function loadBill(id) {                                      // a bill photo as an image (kept for the session so a second report is instant)
+  if (billCache[id]) return Promise.resolve(billCache[id]);
+  return new Promise((res, rej) => google.script.run
+    .withSuccessHandler(src => { const im = new Image(); im.onload = () => { billCache[id] = im; res(im); }; im.onerror = () => rej(new Error('Could not read the image')); im.src = src; })
+    .withFailureHandler(rej).getPhoto(id));
+}
+async function tripReport(id) {
   const t = trips().find(x => x.ID === id); if (!t) return;
   $('#load').style.display = 'block';
+  let bills = [], missing = 0;
+  try {
+    const list = tripStats(t).paidExp.filter(e => e.Photo).sort((a, b) => String(a.Date) < String(b.Date) ? -1 : String(a.Date) > String(b.Date) ? 1 : 0), got = []; let idx = 0;
+    const worker = async () => { while (idx < list.length) { const e = list[idx++]; try { got.push({e, img: await loadBill(e.Photo), n: idx}); } catch (x) { missing++; } } };
+    await Promise.all([worker(), worker(), worker()]);
+    bills = got.sort((a, b) => String(a.e.Date) < String(b.e.Date) ? -1 : String(a.e.Date) > String(b.e.Date) ? 1 : a.n - b.n);
+  } catch (e) {}
   setTimeout(() => {
     try {
-      const pages = drawTripPages(t), bytes = pagesToPdf(pages);
+      const pages = drawTripPages(t, bills), bytes = pagesToPdf(pages);
       lastReport = {bytes, name: ('Trip - ' + t.Name).replace(/[\\/:*?"<>|]+/g, ' ').trim() + '.pdf', title: t.Name};
       M = null;
-      $('#sheet').innerHTML = `<h3>📄 Report ready</h3><div class="mute" style="margin-bottom:8px">${pages.length} page${pages.length === 1 ? '' : 's'} · ${(bytes.length / 1024).toFixed(0)} KB · ${esc(lastReport.name)}</div>
+      $('#sheet').innerHTML = `<h3>📄 Report ready</h3><div class="mute" style="margin-bottom:8px">${pages.length} page${pages.length === 1 ? '' : 's'} · ${(bytes.length / 1024).toFixed(0)} KB${bills.length ? ' · ' + bills.length + ' bill' + (bills.length === 1 ? '' : 's') + ' included' : ''} · ${esc(lastReport.name)}</div>
+        ${missing ? `<div class="warn" style="font-size:13px;margin-bottom:8px">${missing} bill${missing === 1 ? '' : 's'} could not be loaded (they need internet). Connect and build the report again to include ${missing === 1 ? 'it' : 'them'}.</div>` : ''}
         <img src="${pages[0].toDataURL('image/jpeg', 0.55)}" style="width:100%;border:1px solid var(--line);border-radius:10px">
         <div class="btns" style="margin-top:12px"><button class="btn" onclick="shareReport()">Share with the group</button><button class="btn ghost" onclick="openReport()">Open / view</button><button class="btn ghost" onclick="saveReport()">Save to device</button><button class="btn ghost" onclick="closeM()">Close</button></div>`;
       $('#bd').style.display = 'block'; $('#sheet').style.display = 'block';
