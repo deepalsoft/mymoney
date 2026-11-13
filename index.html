@@ -38,7 +38,7 @@
     TripBudget: ['ID','TripID','Item','Category','Amount','Note','PerPerson','Exclude'],
     TripExp: ['ID','TripID','Date','Item','Category','Amount','Account','BudgetItem','Kind','Member','Status','Note','Source','PaidBy','Exclude']
   };
-  const VER = 'v22';
+  const VER = 'v23';
   const LS = window.localStorage;
   const cfg = () => ({ url: LS.getItem('mm_url') || '', key: LS.getItem('mm_key') || '' });
   const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -962,7 +962,7 @@ function home() {
     ${rec > 0.005 || owe > 0.005 ? `<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
       ${rec > 0.005 ? `<span class="rcv" onclick="${goLoans}">💰 To receive <b>${n0(rec)}</b></span>` : ''}
       ${owe > 0.005 ? `<span class="rcv ow" onclick="${goLoans}">You owe <b>${n0(owe)}</b></span>` : ''}</div>` : ''}
-    ${activeTrips().length ? `<div style="margin-top:8px"><span class="rcv trip" onclick="openTrips()">✈ Trip balance <b>${n0(sum(activeTrips(), t => tripStats(t).held))}</b></span><span class="mute" style="font-size:12px;margin-left:8px">kept separate from your balance</span></div>` : ''}
+    ${activeTrips().length ? `<div style="margin-top:8px"><span class="rcv trip" onclick="openTrips()">✈ Trip balance <b>${n0(sum(activeTrips(), t => tripStats(t).balance))}</b></span><span class="mute" style="font-size:12px;margin-left:8px">kept separate from your balance</span></div>` : ''}
   </div>
   <h2>Expenses</h2>
   <div class="card tight">
@@ -1491,48 +1491,54 @@ function animScreen() {
   <div class="mute" style="margin-top:8px">Tip: swipe left or right on any screen to change tab. On Home, swipe the top card to change account.</div>`;
 }
 let otherAll = false, otherOpen = null, dayOpen = null, dayAll = false;
+let anaK = 'note', anaAcc = '', anaYm = thisYm(), anaUTKind = 'Unit Trust', anaUTFund = '', anaUTOpen = null, anaUTAll = false;
+const anaAccOk = t => !anaAcc || t.Account === anaAcc;
+const ymName = ym => new Date(+ym.slice(0, 4), +ym.slice(5, 7) - 1, 1).toLocaleString(undefined, {month: 'long', year: 'numeric'});
+function anaShift(d) { const dt = new Date(+anaYm.slice(0, 4), +anaYm.slice(5, 7) - 1 + d, 1); anaYm = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0'); otherOpen = null; dayOpen = null; render(); }
+function openAna(k) { anaK = k; otherOpen = null; dayOpen = null; anaUTOpen = null; sub = 'ana'; render(); window.scrollTo(0, 0); }
+function anaPickAcc(n) { anaAcc = n; otherOpen = null; dayOpen = null; render(); }
 const otherCatName = () => { const sv = getSet('OtherCat'); if (sv && D.Categories.some(c => c.Name === sv)) return sv; const m = D.Categories.filter(c => c.Type === 'Expense' && /other/i.test(c.Name)); return m.length ? m[0].Name : ''; };
 function pickOtherCat() { const ex = D.Categories.filter(c => c.Type === 'Expense').map(c => c.Name); openForm('Note-wise summary', 'x', [{k: 'Name', l: 'Show where this category went', t: 'select', o: ex}], {Name: otherCatName() || ex[0]}, {noDelete: true, submit: o => { setSet('OtherCat', o.Name); otherOpen = null; render(); }}); }
 function toggleOther(i) { otherOpen = otherOpen === i ? null : i; render(); }
 function toggleDay(d) { dayOpen = dayOpen === d ? null : d; render(); }
 function moreOther() {
-  const name = otherCatName(), ym = thisYm();
+  const name = otherCatName(), ym = anaYm;
   if (!name) return `<div class="card" style="margin-top:6px"><b>🔎 Note-wise summary</b><div class="mute" style="margin:4px 0 6px">Pick the category you want to see note by note, for example "Other expense".</div><span class="lnk" style="margin:0" onclick="pickOtherCat()">Choose category</span></div>`;
-  const tx = D.Transactions.filter(t => String(t.Date).slice(0, 7) === ym && t.Category === name && isOut(t)), g = {};
+  const tx = D.Transactions.filter(t => String(t.Date).slice(0, 7) === ym && t.Category === name && isOut(t) && anaAccOk(t)), g = {};
   tx.forEach(t => { const raw = String(t.Note || '').trim(), k = raw.toLowerCase() || '(no note)'; const o = g[k] || (g[k] = {label: raw || '(no note)', total: 0, n: 0, items: []}); o.total += val(t); o.n++; o.items.push(t); });
   const list = Object.keys(g).map(k => g[k]).sort((a, b) => b.total - a.total), tot = sum(list, x => x.total), mx = list.length ? list[0].total : 1, shown = otherAll ? list : list.slice(0, 8);
   const row = (x, i) => `<div style="padding:7px 0;border-top:1px solid var(--line)" onclick="toggleOther(${i})"><div class="row"><span style="min-width:0"><span class="mute">${otherOpen === i ? '▾' : '▸'}</span> ${esc(x.label)}${x.n > 1 ? ` <span class="mute" style="font-size:12px">× ${x.n}</span>` : ''}</span><b>${fmt(x.total)}</b></div>${progress(x.total, mx, 'thin')}
     ${otherOpen === i ? `<div style="margin-top:6px;padding:4px 10px;background:var(--bg);border-radius:10px">${x.items.slice().sort((p, q) => String(q.Date) < String(p.Date) ? -1 : 1).map(t => `<div class="row" style="padding:4px 0;font-size:13.5px" onclick="event.stopPropagation();editTx('${t.ID}')"><span class="mute">${esc(String(t.Date).slice(5))} · ${esc(t.Account)}</span><b>${fmt(val(t))}</b></div>`).join('')}</div>` : ''}</div>`;
   return `<div class="card" style="margin-top:6px"><div class="row"><b>🔎 ${esc(name)} by note</b><span class="lnk" style="margin:0" onclick="pickOtherCat()">change</span></div>
-    <div class="mute" style="font-size:12px;margin:2px 0 6px">${new Date().toLocaleString(undefined, {month: 'long'})} · ${list.length} note${list.length === 1 ? '' : 's'} · ${tx.length} expense${tx.length === 1 ? '' : 's'} · ${fmt(tot)}</div>
+    <div class="mute" style="font-size:12px;margin:2px 0 6px">${ymName(anaYm)}${anaAcc ? ' · ' + esc(anaAcc) : ''} · ${list.length} note${list.length === 1 ? '' : 's'} · ${tx.length} expense${tx.length === 1 ? '' : 's'} · ${fmt(tot)}</div>
     ${list.length ? shown.map((x, i) => row(x, i)).join('') : '<div class="mute" style="padding:6px 0">Nothing in this category yet this month.</div>'}
     ${list.length > 8 ? `<div class="more" onclick="otherAll=!otherAll;render()">${otherAll ? 'Show less' : 'Show all ' + list.length}</div>` : ''}</div>`;
 }
 function moreDaily() {
-  const ym = thisYm(), tx = D.Transactions.filter(t => String(t.Date).slice(0, 7) === ym && isOut(t));
+  const ym = anaYm, tx = D.Transactions.filter(t => String(t.Date).slice(0, 7) === ym && isOut(t) && anaAccOk(t));
   if (!tx.length) return '';
   const g = {}; tx.forEach(t => { const d = String(t.Date).slice(0, 10); (g[d] = g[d] || []).push(t); });
   const days = Object.keys(g).sort().reverse(), dt = d => sum(g[d], val), mx = Math.max.apply(null, days.map(dt)), tot = sum(tx, val), shown = dayAll ? days : days.slice(0, 10);
   const lab = d => new Date(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)).toLocaleDateString(undefined, {weekday: 'short', day: 'numeric', month: 'short'});
   const row = d => `<div style="padding:7px 0;border-top:1px solid var(--line)" onclick="toggleDay('${d}')"><div class="row"><span><span class="mute">${dayOpen === d ? '▾' : '▸'}</span> ${esc(lab(d))} <span class="mute" style="font-size:12px">× ${g[d].length}</span></span><b>${fmt(dt(d))}</b></div>${progress(dt(d), mx, 'thin')}
     ${dayOpen === d ? `<div style="margin-top:6px;padding:4px 10px;background:var(--bg);border-radius:10px">${g[d].map(t => `<div class="row" style="padding:4px 0;font-size:13.5px" onclick="event.stopPropagation();editTx('${t.ID}')"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.Category)}${t.Note ? ` <span class="mute">· ${esc(t.Note)}</span>` : ''}</span><b style="white-space:nowrap">${fmt(val(t))}</b></div>`).join('')}</div>` : ''}</div>`;
-  return `<div class="card" style="margin-top:6px"><div class="row"><b>🗓 Expenses by date</b><span class="mute" style="font-size:12px">${new Date().toLocaleString(undefined, {month: 'long'})}</span></div>
+  return `<div class="card" style="margin-top:6px"><div class="row"><b>🗓 Expenses by date</b><span class="mute" style="font-size:12px">${ymName(anaYm)}${anaAcc ? ' · ' + esc(anaAcc) : ''}</span></div>
     <div class="mute" style="font-size:12px;margin:2px 0 6px">${days.length} day${days.length === 1 ? '' : 's'} with spending · ${fmt(tot)} · average ${fmt(tot / days.length)} a day</div>
     ${shown.map(row).join('')}${days.length > 10 ? `<div class="more" onclick="dayAll=!dayAll;render()">${dayAll ? 'Show less' : 'Show all ' + days.length + ' days'}</div>` : ''}</div>`;
 }
 function moreInsights() {                                  // "this month" summary shown under Settings
-  const ym = thisYm(), n = new Date(), d = n.getDate(), dim = new Date(n.getFullYear(), n.getMonth() + 1, 0).getDate();
-  const tx = D.Transactions.filter(t => String(t.Date).slice(0, 7) === ym), outs = tx.filter(isOut);
+  const ym = anaYm, cur = ym === thisYm(), dim = new Date(+ym.slice(0, 4), +ym.slice(5, 7), 0).getDate(), d = cur ? new Date().getDate() : dim;
+  const tx = D.Transactions.filter(t => String(t.Date).slice(0, 7) === ym && anaAccOk(t)), outs = tx.filter(isOut);
   const exp = sum(outs, val), inc = sum(tx.filter(isInTag), val);
   if (!exp && !inc) return '';
-  const budget = sum(D.Categories.filter(c => c.Type === 'Expense'), c => catBud(c, ym));
+  const budget = sum(D.Categories.filter(c => c.Type === 'Expense'), c => anaAcc ? accBud(c.Name, anaAcc, ym) : catBud(c, ym));
   const used = budget > 0 ? exp / budget * 100 : 0, rate = inc > 0 ? (inc - exp) / inc * 100 : null;
   const by = {}; outs.forEach(t => { by[t.Category] = (by[t.Category] || 0) + val(t); });
   const top = Object.keys(by).map(k => [k, by[k]]).sort((a, b) => b[1] - a[1]).slice(0, 3), mx = top.length ? top[0][1] : 1;
   const big = outs.slice().sort((a, b) => val(b) - val(a))[0];
   const col = budget > 0 ? spendColor(used) : 'var(--ink)';
-  const mname = n.toLocaleString(undefined, {month: 'long'});
-  return `<div class="card" style="margin-top:6px"><div class="row"><b>📊 ${mname} so far</b><span class="mute" style="font-size:12px">day ${d} of ${dim}</span></div>
+  const mname = ymName(ym);
+  return `<div class="card" style="margin-top:6px"><div class="row"><b>📊 ${mname}${cur ? ' so far' : ''}${anaAcc ? ' · ' + esc(anaAcc) : ''}</b><span class="mute" style="font-size:12px">${cur ? 'day ' + d + ' of ' + dim : dim + ' days'}</span></div>
     <div class="kpi" style="margin-top:8px"><div><span>Savings rate</span><b class="${rate !== null && rate < 0 ? 'warn' : 'inc'}">${rate === null ? '–' : rate.toFixed(0) + '%'}</b></div>
       <div><span>Daily average</span><b>${short(exp / d)}</b></div><div><span>Budget left</span><b style="color:${col}">${budget > 0 ? short(budget - exp) : '–'}</b></div></div>
     ${budget > 0 ? `<div style="margin:8px 0 2px">${progress(exp, budget, 'thin', true)}<div class="mute" style="font-size:12px;margin-top:4px">Spent ${used.toFixed(0)}% of your ${short(budget)} monthly budget</div></div>` : ''}
@@ -1566,6 +1572,9 @@ function tripNetAcct(name) {                               // trip money sitting
 }
 const tripNetAll = () => sum(D.Accounts, a => tripNetAcct(a.Name));
 const exclSet = x => new Set(String(x || '').split('|').filter(Boolean));
+// members who paid for that item themselves ("Paid personally" linked to a budget item, e.g. their own room) do not share it
+const selfPaid = (exps, item) => new Set(item ? exps.filter(e => e.Kind === 'Private' && e.BudgetItem === item).map(e => e.Member) : []);
+const exclOf = (exps, e) => { const x = exclSet(e.Exclude); selfPaid(exps, e.BudgetItem).forEach(n => x.add(n)); return x; };
 function tripStats(t) {
   const ms = D.TripMembers.filter(m => m.TripID === t.ID), pays = D.TripPay.filter(p => p.TripID === t.ID), exps = D.TripExp.filter(e => e.TripID === t.ID), bud = D.TripBudget.filter(b => b.TripID === t.ID);
   const att = ms.filter(m => m.Role !== 'Donor'), donors = ms.filter(m => m.Role === 'Donor');
@@ -1583,7 +1592,8 @@ function tripStats(t) {
   const fundPaid = sum(paidExp.filter(e => !isDon(e) && !e.PaidBy), e => e.Amount), personalPaid = sum(paidExp.filter(e => !isDon(e) && e.PaidBy), e => e.Amount);
   const collected = sum(memberPays, sgn2), cashDon = sum(pays.filter(p => p.Kind === 'Donation'), p => p.Amount);
   const memExp = paidExp.filter(e => !isDon(e));
-  const nPart = b => att.filter(m => !exclSet(b.Exclude).has(m.Name)).length;
+  const exclB = b => { const x = exclSet(b.Exclude); selfPaid(exps, b.Item).forEach(n => x.add(n)); return x; };
+  const nPart = b => att.filter(m => !exclB(b).has(m.Name)).length;
   const plan = b => (+b.PerPerson > 0 ? (+b.PerPerson || 0) * nPart(b) : (+b.Amount || 0));
   const budRows = bud.map(b => { const sp = sum(memExp.filter(e => e.BudgetItem === b.Item), e => e.Amount), pl = plan(b); return {b, plan: pl, n: nPart(b), spent: sp, left: pl - sp}; });
   const byCat = {}; memExp.forEach(e => { const k = e.Category || 'Other'; byCat[k] = (byCat[k] || 0) + (+e.Amount || 0); });
@@ -1595,11 +1605,11 @@ function tripStats(t) {
     donExp: paidExp.filter(isDon), otherPaid: sum(memberPays.filter(p => !att.some(m => m.Name === p.Member)), sgn2)};
 }
 function tripSettle(t, st) {                               // each member's final cost. Donations are NOT part of this.
-  const per = +t.PerHead || 0, att = st.rows, wOf = r => (+r.m.Expected > 0 && per > 0) ? +r.m.Expected / per : 1;
+  const per = +t.PerHead || 0, att = st.rows, wOf = () => 1;   // every cost is split equally between the members who take part in it
   const shared = st.paidExp.filter(e => e.Source !== 'Donation' && e.Kind !== 'Member');
   const cost = {}, sharedOf = {}; att.forEach(r => { cost[r.m.Name] = 0; sharedOf[r.m.Name] = 0; });
   const split = shared.map(e => {                          // who takes part in each shared cost
-    const ex = exclSet(e.Exclude), P = att.filter(r => !ex.has(r.m.Name)), W = sum(P, wOf);
+    const ex = exclOf(st.exps, e), P = att.filter(r => !ex.has(r.m.Name)), W = sum(P, wOf);
     if (W > 0) P.forEach(r => { sharedOf[r.m.Name] += (+e.Amount || 0) * wOf(r) / W; });
     return {e, n: P.length, names: P.map(r => r.m.Name), skipped: att.filter(r => ex.has(r.m.Name)).map(r => r.m.Name)};
   });
@@ -1705,7 +1715,7 @@ function tripBudgetTab(t, st) {
   const row = r => { const pc = r.plan > 0 ? r.spent / r.plan * 100 : 0, b = r.b;
     return `<div class="card tight" onclick="editBud('${b.ID}')"><div class="row"><b>${esc(b.Item)}</b><b>${fmt(r.plan)}</b></div>${progress(r.spent, r.plan, 'thin', true)}
       <div class="row mute" style="font-size:12px;margin-top:3px"><span>${esc(b.Category || '')}${+b.PerPerson > 0 ? ' · ' + fmt(b.PerPerson) + ' × ' + r.n + (r.n === 1 ? ' person' : ' people') : ''} · spent ${fmt(r.spent)}</span><span style="color:${spendColor(pc)};font-weight:600">${r.left < -0.5 ? 'Over by ' + fmt(-r.left) : 'Left ' + fmt(r.left)}</span></div>
-      ${exclSet(b.Exclude).size ? `<div class="mute" style="font-size:12px;margin-top:2px">Not for: ${esc(Array.from(exclSet(b.Exclude)).join(', '))}</div>` : ''}</div>`; };
+      ${(() => { const x = new Set(exclSet(b.Exclude)); selfPaid(st.exps, b.Item).forEach(n => x.add(n)); return x.size ? `<div class="mute" style="font-size:12px;margin-top:2px">Not for: ${esc(Array.from(x).join(', '))}</div>` : ''; })()}</div>`; };
   return `<div class="card tight"><div class="row"><span class="mute">Total budget</span><b>${fmt(st.budget)}</b></div><div class="row" style="margin-top:4px"><span class="mute">Spent on budgeted items</span><b>${fmt(st.spentColl - st.unbud)}</b></div>
     <div class="row" style="margin-top:4px"><span class="mute">Still to pay (budget left)</span><b>${fmt(st.stillToPay)}</b></div>${st.unbud > 0.5 ? `<div class="row" style="margin-top:4px"><span class="mute">Spent outside the budget list</span><b>${fmt(st.unbud)}</b></div>` : ''}</div>
   ${st.budRows.length ? st.budRows.map(row).join('') : '<div class="empty">No budget items yet.<br>Add hotel, transport, food… with the planned amount, or an amount per person.</div>'}
@@ -1714,13 +1724,13 @@ function tripBudgetTab(t, st) {
 
 function tripExpTab(t, st) {
   const l = st.paidExp.slice().sort((a, b) => String(b.Date) < String(a.Date) ? -1 : 1);
-  const row = e => { const ex = Array.from(exclSet(e.Exclude));
+  const row = e => { const ex = Array.from(exclOf(st.exps, e));
     return `<div class="row" style="padding:8px 0;border-top:1px solid var(--line)" onclick="editTripExp('${e.ID}')"><div style="min-width:0"><b style="font-weight:600">${esc(e.Item)}</b>${e.Kind === 'Booking' ? ' <span class="chip">booking</span>' : ''}${e.Kind === 'Member' ? ` <span class="chip">${esc(e.Member)}</span>` : ''}${e.Source === 'Donation' ? ' <span class="chip soon">donation fund</span>' : ''}${e.PaidBy ? ` <span class="chip ok">paid by ${esc(e.PaidBy)}</span>` : ''}
       <div class="mute" style="font-size:12px">${esc(String(e.Date).slice(5))} · ${esc(e.Category || '')}${e.BudgetItem ? ' · ' + esc(e.BudgetItem) : ''}${ex.length ? ' · not shared with ' + esc(ex.join(', ')) : ''}${e.Note ? ' · ' + esc(e.Note) : ''}</div></div><b class="exp" style="white-space:nowrap">${fmt(e.Amount)}</b></div>`; };
   return `<div class="card tight"><div class="row"><span class="mute">Spent from member money</span><b class="exp">${fmt(st.spentColl)}</b></div>${st.spentDon > 0 ? `<div class="row" style="margin-top:4px"><span class="mute">Spent from the donation fund</span><b>${fmt(st.spentDon)}</b></div>` : ''}${st.booking > 0 ? `<div class="row" style="margin-top:4px"><span class="mute">of which booking fees</span><b>${fmt(st.booking)}</b></div>` : ''}</div>
   <div class="card tight">${l.length ? l.map(row).join('') : '<div class="mute" style="padding:6px 0">No expenses yet.</div>'}</div>
   <div class="actions" style="grid-template-columns:1fr 1fr"><button onclick="editTripExp(null)">＋ Expense / booking</button><button onclick="editPrivate(null)">＋ Paid personally</button></div>
-  ${st.private.length ? `<h2>Paid personally by members</h2><div class="mute" style="font-size:13px;margin:-4px 0 6px">A member paid this for themselves (for example their own room). It is not part of the trip cost.</div><div class="card tight">${st.private.map(e => `<div class="row" style="padding:7px 0;border-top:1px solid var(--line)" onclick="editPrivate('${e.ID}')"><span style="min-width:0"><b style="font-weight:600">${esc(e.Member)}</b> <span class="mute">· ${esc(e.Item)}${e.Note ? ' · ' + esc(e.Note) : ''}</span></span><b>${fmt(e.Amount)}</b></div>`).join('')}</div>` : ''}`;
+  ${st.private.length ? `<h2>Paid personally by members</h2><div class="mute" style="font-size:13px;margin:-4px 0 6px">A member paid this for themselves (for example their own room). It is not part of the trip cost. If it is linked to a budget item, that member is left out of that item only and still shares every other cost.</div><div class="card tight">${st.private.map(e => `<div class="row" style="padding:7px 0;border-top:1px solid var(--line)" onclick="editPrivate('${e.ID}')"><span style="min-width:0"><b style="font-weight:600">${esc(e.Member)}</b> <span class="mute">· ${esc(e.Item)}${e.Note ? ' · ' + esc(e.Note) : ''}</span></span><b>${fmt(e.Amount)}</b></div>`).join('')}</div>` : ''}`;
 }
 
 function tripItemsTab(t, st) {
@@ -1835,11 +1845,13 @@ function editTripExp(id) {
 }
 function editPrivate(id) {                                  // a member paid for themselves (not part of the trip cost)
   const names = attNames(); if (!names.length) { alert('Add the members first.'); return; }
-  const e0 = id ? D.TripExp.find(x => x.ID === id) : null, v = e0 || {TripID: tripId, Member: names[0], Date: today(), Kind: 'Private', Status: 'Paid'};
+  const bi = D.TripBudget.filter(b => b.TripID === tripId).map(b => b.Item), NONE = '(none)';
+  const e0 = id ? D.TripExp.find(x => x.ID === id) : null, v = e0 ? Object.assign({}, e0, {BudgetItem: e0.BudgetItem || NONE}) : {TripID: tripId, Member: names[0], Date: today(), Kind: 'Private', Status: 'Paid', BudgetItem: NONE};
   openForm(id ? 'Edit personal payment' : 'Paid personally', 'TripExp', [
     {k:'Member', l:'Member', t:'select', o:names}, {k:'Item', l:'What they paid for themselves (e.g. own room)', req:true},
+    {k:'BudgetItem', l:'Takes the place of this shared budget item (he is left out of it, e.g. Room)', t:'select', o:[NONE].concat(bi)},
     {k:'Amount', l:'Amount (LKR)', t:'calc', req:true}, {k:'Date', l:'Date', t:'date'}, {k:'Note', l:'Note'}
-  ], v, {submit: o => { o.Kind = 'Private'; o.Status = 'Paid'; o.Source = ''; o.Account = ''; o.PaidBy = ''; o.Category = 'Paid personally'; o.BudgetItem = ''; o.Exclude = ''; call('save', 'TripExp', o); }});
+  ], v, {submit: o => { o.Kind = 'Private'; o.Status = 'Paid'; o.Source = ''; o.Account = ''; o.PaidBy = ''; o.Category = 'Paid personally'; o.BudgetItem = o.BudgetItem === NONE ? '' : o.BudgetItem; o.Exclude = ''; call('save', 'TripExp', o); }});
 }
 function markBought(id) { editTitem(id, null, true); }
 function editTitem(id, member, bought) {
@@ -1886,7 +1898,7 @@ function drawTripPages(t) {
     y += 36;
   };
   const note = (str, col) => { font(23, 400); let cur = ''; String(str).split(' ').forEach(w => { const test = cur ? cur + ' ' + w : w; if (g.measureText(test).width > CW) { need(36); txt(cur, MG, y + 26, 23, 400, col || '#51706a'); y += 34; cur = w; font(23, 400); } else cur = test; }); need(36); txt(cur, MG, y + 26, 23, 400, col || '#51706a'); y += 44; };
-  const splitText = e => { const ex = Array.from(exclSet(e.Exclude)); return (e.Kind === 'Member' ? e.Member + ' only' : ex.length ? 'not ' + ex.join(', ') : 'everyone') + (e.PaidBy ? ' · paid by ' + e.PaidBy : ''); };
+  const splitText = e => { const ex = Array.from(exclOf(D.TripExp.filter(x => x.TripID === t.ID), e)); return (e.Kind === 'Member' ? e.Member + ' only' : ex.length ? 'not ' + ex.join(', ') : 'everyone') + (e.PaidBy ? ' · paid by ' + e.PaidBy : ''); };
   newPage();
   // ---- banner
   const gr = g.createLinearGradient(MG, y, W - MG, y + 250); gr.addColorStop(0, '#5b21b6'); gr.addColorStop(1, '#8b5cf6'); rr(MG, y, CW, 250, 28, gr);
@@ -2001,6 +2013,7 @@ function more() {
   if (sub === 'loans') return loans();
   if (sub === 'inv') return inv();
   if (sub === 'trips') return tripsScreen();
+  if (sub === 'ana') return anaScreen();
   if (sub === 'tabs') return tabsScreen();
   if (sub === 'anim') return animScreen();
   if (sub === 'settings') return settingsScreen();
@@ -2024,7 +2037,73 @@ function more() {
   <div>${tiles}</div>
   ${hid.length && !moreEdit ? `<div class="card"><div class="mute" style="font-size:12px;margin-bottom:8px">Other tabs</div><div class="chips">${hid.map(t => `<button class="chipbtn" onclick="go('${t[0]}')">${t[1]} ${t[2]}</button>`).join('')}</div></div>` : ''}
   ${moreEdit ? '' : tile('settings', '⚙️', 'Settings', 'Name, tabs, alerts, animation' + (typeof mmLockSettings === 'function' ? ', lock, sync' : ''))}
-  ${moreEdit ? '' : moreOther() + moreDaily() + moreInsights()}`;
+  ${moreEdit ? '' : `<div class="card" style="margin-top:6px"><div class="mute" style="font-size:12px;margin-bottom:8px">📊 Analysis</div><div class="chips">${ANA.map(a => `<button class="chipbtn" onclick="openAna('${a[0]}')">${a[1]}</button>`).join('')}</div></div>`}`;
+}
+const ANA = [['note', '🔎 Other by note'], ['date', '🗓 Expenses by date'], ['sum', '📊 Month summary'], ['ut', '📈 Unit trust prices']];
+function anaScreen() {
+  const ut = anaK === 'ut', accs = [''].concat(leafList().map(a => a.Name));
+  const tabs = `<div class="qchips" style="margin:0 0 8px">${ANA.map(a => `<button class="qc ${a[0] === anaK ? 'on' : ''}" onclick="openAna('${a[0]}')">${a[1]}</button>`).join('')}</div>`;
+  const filt = ut ? '' : `<div class="month"><button onclick="anaShift(-1)">‹</button><b>${ymName(anaYm)}</b><button onclick="anaShift(1)">›</button></div>
+    <div class="qchips" style="margin:0 0 8px">${accs.map(n => `<button class="qc ${n === anaAcc ? 'on' : ''}" data-n="${esc(n)}" onclick="anaPickAcc(this.dataset.n)">${n === '' ? 'All accounts' : esc(n)}</button>`).join('')}</div>`;
+  const empty = '<div class="empty">Nothing recorded for this month and account.</div>';
+  const body = anaK === 'note' ? moreOther() : anaK === 'date' ? (moreDaily() || empty) : anaK === 'sum' ? (moreInsights() || empty) : anaUT();
+  return `<div class="back" onclick="sub=null;render()">‹ More</div><h1>Analysis</h1>${tabs}${filt}${body}`;
+}
+
+/* ----- unit trust / share price log: price change and your actual return over a week, month and year ----- */
+const daysAgoIso = n => { const d = new Date(); d.setDate(d.getDate() - n); return isoD(d); };
+const monthsAgoIso = n => isoD(addMonths(new Date(), -n));
+const priceOn = (pts, ds) => { let r = null; pts.forEach(p => { if (String(p.Date).slice(0, 10) <= ds) r = p; }); return r; };
+const unitsOn = (a, ds) => { let u = 0; D.InvTx.filter(t => t.AssetID === a.ID && String(t.Date).slice(0, 10) <= ds).sort(byDateAsc).forEach(t => { const q = +t.Units || 0; if (t.Type === 'Buy') u += q; else if (t.Type === 'Sell') u = Math.max(0, u - q); }); return u; };
+const priceLog = a => { const m = {}; pricePts(a).forEach(p => { m[String(p.Date).slice(0, 10)] = +p.Price; }); return Object.keys(m).sort().map(d => ({Date: d, Price: m[d]})); };
+function utPeriod(a, pts, start, end) {
+  const pS = priceOn(pts, start), pE = priceOn(pts, end);
+  const res = {chg: null, gain: null, pct: null, den: 0};
+  if (pE && pS && pS.Price > 0) res.chg = (pE.Price - pS.Price) / pS.Price * 100;
+  if (!pE) return res;
+  const u0 = unitsOn(a, start), u1 = unitsOn(a, end);
+  if (u0 > 1e-8 && !pS) return res;                        // held at the start but there is no price to value it
+  const tx = D.InvTx.filter(t => t.AssetID === a.ID && String(t.Date).slice(0, 10) > start && String(t.Date).slice(0, 10) <= end);
+  if (u0 < 1e-8 && u1 < 1e-8 && !tx.length) return res;    // not held in this period
+  const span = Math.max(1, (parseD(end) - parseD(start)) / 864e5);
+  let flows = 0, wflows = 0, div = 0;
+  tx.forEach(t => { const q = +t.Units || 0, pr = +t.Price || 0, f = +t.Fees || 0;
+    if (t.Type === 'Dividend') { div += +t.Amount || 0; return; }
+    const F = t.Type === 'Buy' ? q * pr + f : -(q * pr - f), w = Math.max(0, Math.min(1, (parseD(end) - parseD(String(t.Date).slice(0, 10))) / 864e5 / span));
+    flows += F; wflows += w * F; });
+  const v0 = u0 * (pS ? pS.Price : 0), v1 = u1 * pE.Price, den = v0 + wflows;
+  res.gain = v1 - v0 - flows + div; res.den = den; res.pct = den > 1e-6 ? res.gain / den * 100 : null;
+  return res;
+}
+function anaUT() {
+  const kind = anaUTKind, all = D.Assets.filter(a => a.Kind === kind).map(a => ({a, c: calc(a), pts: priceLog(a)})).filter(r => r.pts.length);
+  const funds = all.slice().sort((x, y) => (y.c.units > 1e-8) - (x.c.units > 1e-8) || String(x.a.Name).localeCompare(y.a.Name));
+  const sel = anaUTFund && funds.some(r => r.a.ID === anaUTFund) ? anaUTFund : '', list = sel ? funds.filter(r => r.a.ID === sel) : funds;
+  const end = today(), PER = [['Week', daysAgoIso(7)], ['Month', monthsAgoIso(1)], ['Year', monthsAgoIso(12)]];
+  const word = kind === 'Share' ? 'share' : 'fund';
+  const kindSeg = `<div class="seg"><button class="${kind === 'Unit Trust' ? 'on' : ''}" onclick="anaUTKind='Unit Trust';anaUTFund='';anaUTOpen=null;render()">Unit trusts</button><button class="${kind === 'Share' ? 'on' : ''}" onclick="anaUTKind='Share';anaUTFund='';anaUTOpen=null;render()">Shares</button></div>`;
+  if (!funds.length) return `${kindSeg}<div class="empty">No ${word} prices yet.<br>Tap “Update prices” to start the price log.</div><div class="btns"><button class="btn" onclick="invKind='${kind}';editPrices()">Update prices</button></div>`;
+  const cell = (v, f) => `<span class="${v === null ? 'mute' : pl(v)}">${v === null ? '–' : f(v)}</span>`;
+  const pct = v => (v > 0.005 ? '+' : v < -0.005 ? '−' : '') + Math.abs(v).toFixed(2) + '%';
+  const rows = list.map(r => ({r, per: PER.map(p => utPeriod(r.a, r.pts, p[1], end))}));
+  const tot = PER.map((p, i) => { const g = rows.filter(x => x.per[i].gain !== null); return {gain: g.length ? sum(g, x => x.per[i].gain) : null, den: sum(g, x => x.per[i].den)}; });
+  const head = `<div style="display:grid;grid-template-columns:1.25fr 1fr 1fr 1fr;gap:5px 6px;font-size:13px;text-align:right;align-items:baseline"><span></span>${PER.map(p => `<b style="font-weight:600">${p[0]}</b>`).join('')}`;
+  const card = x => { const r = x.r, open = anaUTOpen === r.a.ID, log = r.pts.slice().reverse(), shown = anaUTAll ? log : log.slice(0, 12), held = r.c.units > 1e-8;
+    const logHtml = open ? `<div style="margin-top:8px" onclick="event.stopPropagation()">${r.pts.length >= 2 ? spark(r.pts) : ''}<div class="mute" style="font-size:12px;margin:6px 0 2px">Price log</div>
+      ${shown.map((p, i) => { const prev = log[i + 1], d = prev ? p.Price - prev.Price : null, dp = prev && prev.Price > 0 ? d / prev.Price * 100 : null;
+        return `<div class="row" style="padding:5px 0;border-top:1px solid var(--line);font-size:13.5px"><span class="mute">${esc(p.Date)}</span><span>${fmtP(p.Price)}${d === null ? '' : ` <span class="${pl(d)}" style="font-size:12px">${d > 0 ? '+' : d < 0 ? '−' : ''}${fmtP(Math.abs(d))} · ${pct(dp)}</span>`}</span></div>`; }).join('')}
+      ${log.length > 12 ? `<div class="more" onclick="anaUTAll=!anaUTAll;render()">${anaUTAll ? 'Show less' : 'Show all ' + log.length}</div>` : ''}</div>` : '';
+    return `<div class="card tight" onclick="anaUTOpen=${open ? 'null' : "'" + r.a.ID + "'"};anaUTAll=false;render()"><div class="row"><b>${open ? '▾' : '▸'} ${esc(r.a.Name)}</b><b>${fmtP(r.c.price)}</b></div>
+      <div class="mute" style="font-size:12px">${held ? fmtU(r.c.units) + ' units held · ' : 'not held · '}price on ${esc(r.c.priceDate)} · ${r.pts.length} price${r.pts.length === 1 ? '' : 's'} logged</div>
+      <div style="margin-top:8px">${head}<span class="mute" style="text-align:left">Price change</span>${x.per.map(q => cell(q.chg, pct)).join('')}<span class="mute" style="text-align:left">Your return</span>${x.per.map(q => cell(q.gain, sgn)).join('')}<span class="mute" style="text-align:left">Return %</span>${x.per.map(q => cell(q.pct, pct)).join('')}</div></div>${logHtml}</div>`; };
+  return `${kindSeg}
+  <div class="qchips" style="margin:0 0 8px"><button class="qc ${sel === '' ? 'on' : ''}" onclick="anaUTFund='';render()">All ${kind === 'Share' ? 'shares' : 'funds'}</button>${funds.map(r => `<button class="qc ${sel === r.a.ID ? 'on' : ''}" onclick="anaUTFund='${r.a.ID}';render()">${esc(r.a.Name)}</button>`).join('')}</div>
+  <div class="card"><b>Your actual return</b><div class="mute" style="font-size:12px;margin:2px 0 8px">Change in value after your buys, sells and dividends in the period${sel ? '' : ', all funds together'}</div>${head}
+    <span class="mute" style="text-align:left">Gain / loss</span>${tot.map(t => cell(t.gain, sgn)).join('')}
+    <span class="mute" style="text-align:left">Return %</span>${tot.map(t => cell(t.gain === null || t.den <= 1e-6 ? null : t.gain / t.den * 100, pct)).join('')}</div></div>
+  ${rows.map(card).join('')}
+  <div class="btns" style="margin-top:8px"><button class="btn" onclick="invKind='${kind}';editPrices()">Update prices</button></div>
+  <div class="mute" style="font-size:12px;margin-top:8px">Every price you save is kept in a log, so the changes above build up over time. “–” means there is no price from that far back yet. Your return counts the units you actually held, and adjusts for units bought or sold during the period. Prices from your own buys and sells are included in the log.</div>`;
 }
 function tabsScreen() {
   const L = allTabs(), h = hiddenSet();
