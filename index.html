@@ -38,7 +38,7 @@
     TripBudget: ['ID','TripID','Item','Category','Amount','Note','PerPerson','Exclude','Parent'],
     TripExp: ['ID','TripID','Date','Item','Category','Amount','Account','BudgetItem','Kind','Member','Status','Note','Source','PaidBy','Exclude','Photo']
   };
-  const VER = 'v27';
+  const VER = 'v28';
   const LS = window.localStorage;
   const cfg = () => ({ url: LS.getItem('mm_url') || '', key: LS.getItem('mm_key') || '' });
   const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -1714,7 +1714,7 @@ function tripSummary(t, st) {
     ${st.collBal < -0.5 ? `<div class="warn" style="font-size:13px;margin-top:8px">Spent ${fmt(-st.collBal)} more than the members have paid in.</div>` : ''}</div>
   <div class="card tight" style="border-left:5px solid ${net > 0 ? '#0f766e' : net < 0 ? '#b91c1c' : '#16a34a'}" onclick="goTrip('mem')"><div class="row"><b>${net > 0 ? 'Excess to share back' : net < 0 ? 'Shortfall to collect' : 'Everything balances ✓'}</b><b>${net === 0 ? '' : fmt(Math.abs(net))}</b></div>
     <div class="mute" style="font-size:13px;margin-top:4px">${net > 0 ? 'Left over after all costs. Each member\u2019s refund is below.' : net < 0 ? 'More was spent than collected. Each member\u2019s amount to collect is below.' : 'Collected money matches the cost exactly.'}${live ? ' An estimate from what has been spent so far.' : ''}</div></div>
-  ${S.rows.length ? `<h2>Members</h2>${S.rows.map(r => memberBanner(r, "goTrip('mem')")).join('')}` : ''}
+  ${S.rows.length ? `<h2>Members</h2>${memberList(S.rows, () => "goTrip('mem')")}` : ''}
   ${odd.length ? `<div class="card tight" onclick="goTrip('exp')"><div class="mute" style="font-size:12px;margin-bottom:4px">Costs not shared by everyone ›</div>${odd.map(x => `<div class="row" style="padding:4px 0"><span style="min-width:0">${esc(x.e.Item)} <span class="mute" style="font-size:12px">· not ${esc(x.skipped.join(', '))}</span></span><b>${fmt(x.e.Amount)}</b></div>`).join('')}</div>` : ''}
   <div class="card tight"><div class="row"><span class="mute">Shared costs</span><b>${fmt(R(S.sharedTotal))}</b></div><div class="row" style="margin-top:4px"><span class="mute">Members' own accessories</span><b>${fmt(R(S.personalTotal))}</b></div>
     <div class="row" style="margin-top:6px;border-top:1px solid var(--line);padding-top:6px"><b>Total cost for members</b><b>${fmt(R(S.cost))}</b></div></div>
@@ -1726,18 +1726,17 @@ function tripSummary(t, st) {
 const tripDonations = st => st.pays.filter(p => p.Kind === 'Donation').map(p => ({id: p.ID, sheet: 'TripPay', date: p.Date, from: p.Member, what: 'cash' + (p.Note ? ' · ' + p.Note : ''), amt: +p.Amount || 0, item: false}))
   .concat(st.donated.map(e => ({id: e.ID, sheet: 'TripExp', date: e.Date, from: e.Member, what: e.Item + (e.Note ? ' · ' + e.Note : ''), amt: 0, item: true})))
   .sort((a, b) => String(b.date) < String(a.date) ? -1 : 1);
-function memberBanner(r, go) {
-  const R = Math.round, d = R(r.diff), col = d > 0 ? '#0f766e' : d < 0 ? '#b91c1c' : '#16a34a', act = Math.abs(d) >= 1;
-  const chip = d > 0 ? `<span class="chip ok" ${act ? `onclick="event.stopPropagation();editTripPay(null,'${qs(r.m.Name)}','Refund',${d})"` : ''}>Refund ${fmt(d)}</span>` : d < 0 ? `<span class="chip bad" ${act ? `onclick="event.stopPropagation();editTripPay(null,'${qs(r.m.Name)}','Collection',${-d})"` : ''}>Collect ${fmt(-d)}</span>` : '<span class="chip">Settled ✓</span>';
-  const cell = (l, v, c) => `<div><div class="mute" style="font-size:11px">${l}</div><b style="${c ? 'color:' + c : ''}">${v}</b></div>`;
-  return `<div class="card tight" style="border-left:5px solid ${col}" onclick="${go}"><div class="row"><b>${esc(r.m.Name)}</b>${chip}</div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;text-align:center;margin-top:8px">${cell('Collected', fmt(R(r.collected)))}${cell('Expenses paid', fmt(R(r.paidOut)))}${cell(d > 0 ? 'Refund' : d < 0 ? 'Owes' : 'Balance', d === 0 ? '0' : fmt(Math.abs(d)), col)}</div>
-    <div class="mute" style="font-size:12px;margin-top:6px">Final cost ${fmt(R(r.cost))} · shared ${fmt(R(r.shared))}${r.personal > 0 ? ' · own items ' + fmt(R(r.personal)) : ''}</div></div>`;
+function memberList(rows, go) {                             // one compact line per member
+  const R = Math.round;
+  return `<div class="card tight">${rows.map((r, i) => { const d = R(r.diff), act = Math.abs(d) >= 1, to = go(r);
+    const chip = d > 0 ? `<span class="chip ok" ${act ? `onclick="event.stopPropagation();editTripPay(null,'${qs(r.m.Name)}','Refund',${d})"` : ''}>Refund ${fmt(d)}</span>` : d < 0 ? `<span class="chip bad" ${act ? `onclick="event.stopPropagation();editTripPay(null,'${qs(r.m.Name)}','Collection',${-d})"` : ''}>Owes ${fmt(-d)}</span>` : '<span class="chip">Settled ✓</span>';
+    return `<div class="row" style="padding:7px 0;${i ? 'border-top:1px solid var(--line)' : ''}" onclick="${to}"><div style="min-width:0"><b style="font-weight:600">${esc(r.m.Name)}</b>
+      <div class="mute" style="font-size:12px">Collected ${fmt(R(r.collected))}${r.paidOut > 0 ? ' · Paid ' + fmt(R(r.paidOut)) : ''} · Cost ${fmt(R(r.cost))}</div></div>${chip}</div>`; }).join('')}</div>`;
 }
 function tripMembersTab(t, st) {
   const S = tripSettle(t, st);
   const pays = st.pays.filter(p => p.Kind !== 'Donation'), dons = tripDonations(st);
-  return `${S.rows.length ? S.rows.map(r => memberBanner(r, `memberSheet('${r.m.ID}')`)).join('') : '<div class="empty">No members yet.<br>Add the people joining the trip.</div>'}
+  return `${S.rows.length ? memberList(S.rows, r => `memberSheet('${r.m.ID}')`) : '<div class="empty">No members yet.<br>Add the people joining the trip.</div>'}
   ${Math.abs(st.otherPaid) > 0.5 ? `<div class="card tight"><div class="row"><span class="mute">Payments from removed members</span><b>${fmt(st.otherPaid)}</b></div></div>` : ''}
   <div class="actions" style="grid-template-columns:1fr 1fr;margin-top:6px"><button onclick="editMember(null)">＋ Member</button><button onclick="editTripPay(null)">＋ Payment received</button></div>
   ${pays.length ? `<h2>Payments received</h2><div class="card tight">${pays.slice().sort((a, b) => String(b.Date) < String(a.Date) ? -1 : 1).map(p => `<div class="row" style="padding:7px 0;border-top:1px solid var(--line)" onclick="editTripPay('${p.ID}')"><span style="min-width:0"><span class="mute">${esc(String(p.Date).slice(5))}</span> ${esc(p.Member)}${p.Kind === 'Refund' ? ' <span class="chip bad">refund</span>' : ''}${p.Note ? ` <span class="mute" style="font-size:12px">· ${esc(p.Note)}</span>` : ''}</span><b class="${p.Kind === 'Refund' ? 'exp' : 'inc'}">${p.Kind === 'Refund' ? '−' : '+'} ${fmt(p.Amount)}</b></div>`).join('')}</div>` : ''}
@@ -1756,31 +1755,29 @@ function budShow(id, mode) { if (budOpen === id && budMode === mode) budOpen = n
 function addSub(id) { const b = D.TripBudget.find(x => x.ID === id); if (b) editBud(null, b.Item); }
 function tripBudgetTab(t, st) {
   const notFor = b => { const x = new Set(exclSet(b.Exclude)); selfPaid(st.exps, b.Item).forEach(n => x.add(n)); const q = b.Parent && st.bud.find(y => y.Item === b.Parent && !y.Parent); if (q) exclSet(q.Exclude).forEach(n => x.add(n)); return Array.from(x); };
-  const memPanel = r => `<div style="margin-top:8px;border-top:1px solid var(--line);padding-top:6px"><div class="mute" style="font-size:12px;margin-bottom:2px">Allocation per member</div>
-    ${r.alloc.map(a => `<div style="padding:4px 0"><div class="row"><span>${esc(a.name)}</span><b class="${a.amt > 0.5 ? '' : 'mute'}">${a.amt > 0.5 ? fmt(Math.round(a.amt)) : 'not in this'}</b></div>
-      ${r.kids.length && a.amt > 0.5 ? `<div class="mute" style="font-size:12px">${a.parts.filter(q => q.amt > 0.5).map(q => esc(q.item) + ' ' + fmt(Math.round(q.amt))).join(' · ')}</div>` : ''}</div>`).join('')}
-    <div class="row" style="border-top:1px solid var(--line);padding-top:5px;margin-top:3px"><span class="mute">Total</span><b>${fmt(Math.round(sum(r.alloc, a => a.amt)))}</b></div></div>`;
+  const memPanel = r => `<div style="margin-top:6px;border-top:1px solid var(--line);padding-top:4px" onclick="event.stopPropagation()">
+    ${r.alloc.map(a => `<div class="row" style="padding:2px 0;font-size:13.5px"><span>${esc(a.name)}${r.kids.length && a.amt > 0.5 ? ` <span class="mute" style="font-size:11.5px">${a.parts.filter(q => q.amt > 0.5).map(q => esc(q.item) + ' ' + fmt(Math.round(q.amt))).join(' · ')}</span>` : ''}</span><b class="${a.amt > 0.5 ? '' : 'mute'}">${a.amt > 0.5 ? fmt(Math.round(a.amt)) : '–'}</b></div>`).join('')}
+    <div class="row" style="border-top:1px solid var(--line);padding-top:3px;margin-top:2px;font-size:13.5px"><span class="mute">Total</span><b>${fmt(Math.round(sum(r.alloc, a => a.amt)))}</b></div></div>`;
   const spendPanel = r => { const names = [r.b.Item].concat(st.budRows.filter(k => r.kids.includes(k.b.ID)).map(k => k.b.Item));
     const l = st.paidExp.filter(e => e.Source !== 'Donation' && names.indexOf(e.BudgetItem) >= 0).sort((a, b) => String(b.Date) < String(a.Date) ? -1 : String(b.Date) > String(a.Date) ? 1 : 0);
-    return `<div style="margin-top:8px;border-top:1px solid var(--line);padding-top:6px"><div class="mute" style="font-size:12px;margin-bottom:2px">Actual spend</div>
-    ${l.length ? l.map(e => `<div class="row" style="padding:6px 0;border-top:1px solid var(--line)" onclick="event.stopPropagation();editTripExp('${e.ID}')"><span style="min-width:0"><b style="font-weight:600">${esc(e.Item)}</b>${e.BudgetItem !== r.b.Item ? ` <span class="chip">${esc(e.BudgetItem)}</span>` : ''}
-        <div class="mute" style="font-size:12px">${esc(String(e.Date).slice(0, 10))} · paid by ${e.PaidBy ? esc(e.PaidBy) : 'trip fund' + (e.Account ? ' (' + esc(e.Account) + ')' : '')}</div></span><b class="exp" style="white-space:nowrap">${fmt(e.Amount)}</b></div>`).join('') : '<div class="mute" style="padding:4px 0">Nothing spent on this yet.</div>'}
-    <div class="row" style="border-top:1px solid var(--line);padding-top:5px;margin-top:3px"><span class="mute">Total spent</span><b>${fmt(sum(l, e => e.Amount))}</b></div></div>`; };
-  const btns = r => `<div class="btns" style="margin-top:8px" onclick="event.stopPropagation()"><button class="btn ${budOpen === r.b.ID && budMode === 'mem' ? '' : 'ghost'} sm" onclick="budShow('${r.b.ID}','mem')">👥 Members</button><button class="btn ${budOpen === r.b.ID && budMode === 'spend' ? '' : 'ghost'} sm" onclick="budShow('${r.b.ID}','spend')">🧾 Actual spend</button>${r.sub ? '' : `<button class="btn ghost sm" onclick="addSub('${r.b.ID}')">＋ Sub</button>`}</div>`;
+    return `<div style="margin-top:6px;border-top:1px solid var(--line);padding-top:2px" onclick="event.stopPropagation()">
+    ${l.length ? l.map(e => `<div class="row" style="padding:4px 0" onclick="event.stopPropagation();editTripExp('${e.ID}')"><span style="min-width:0;font-size:13.5px">${esc(e.Item)}${e.BudgetItem !== r.b.Item ? ` <span class="mute" style="font-size:11.5px">(${esc(e.BudgetItem)})</span>` : ''}
+        <div class="mute" style="font-size:11.5px">${esc(String(e.Date).slice(0, 10))} · ${e.PaidBy ? esc(e.PaidBy) : 'trip fund' + (e.Account ? ' · ' + esc(e.Account) : '')}</div></span><b class="exp" style="white-space:nowrap;font-size:13.5px">${fmt(e.Amount)}</b></div>`).join('') : '<div class="mute" style="padding:4px 0;font-size:13px">Nothing spent on this yet.</div>'}
+    ${l.length > 1 ? `<div class="row" style="border-top:1px solid var(--line);padding-top:3px;margin-top:2px;font-size:13.5px"><span class="mute">Total</span><b>${fmt(sum(l, e => e.Amount))}</b></div>` : ''}</div>`; };
+  const pill = (r, mode, label) => `<span class="chip ${budOpen === r.b.ID && budMode === mode ? 'ok' : ''}" style="cursor:pointer" onclick="event.stopPropagation();budShow('${r.b.ID}','${mode}')">${label}</span>`;
+  const btns = r => `<div style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap" onclick="event.stopPropagation()">${pill(r, 'mem', '👥 Members')}${pill(r, 'spend', '🧾 Spend')}${r.sub ? '' : `<span class="chip" style="cursor:pointer" onclick="addSub('${r.b.ID}')">＋ Sub</span>`}</div>`;
   const panel = r => budOpen === r.b.ID ? (budMode === 'spend' ? spendPanel(r) : memPanel(r)) : '';
-  const kidRow = r => { const b = r.b, pc = r.plan > 0 ? r.spent / r.plan * 100 : 0;
-    return `<div style="padding:8px 0 4px 12px;border-top:1px dashed var(--line)" onclick="event.stopPropagation();editBud('${b.ID}')"><div class="row"><span>↳ <b style="font-weight:600">${esc(b.Item)}</b>${+b.PerPerson > 0 ? ` <span class="mute" style="font-size:12px">${fmt(b.PerPerson)} × ${r.n}</span>` : ''}</span><b>${fmt(r.plan)}</b></div>${progress(r.spent, r.plan, 'thin', true)}
-      <div class="row mute" style="font-size:12px;margin-top:2px"><span>spent ${fmt(r.spent)}${notFor(b).length ? ' · not for ' + esc(notFor(b).join(', ')) : ''}</span><span style="color:${spendColor(pc)};font-weight:600">${r.left < -0.5 ? 'Over by ' + fmt(-r.left) : 'Left ' + fmt(r.left)}</span></div>${btns(r)}${panel(r)}</div>`; };
-  const card = r => { const b = r.b, pc = r.plan > 0 ? r.spent / r.plan * 100 : 0, kids = st.budRows.filter(k => r.kids.includes(k.b.ID));
-    return `<div class="card tight" onclick="editBud('${b.ID}')"><div class="row"><b>${esc(b.Item)}</b><b>${fmt(r.plan)}</b></div>${progress(r.spent, r.plan, 'thin', true)}
-      <div class="row mute" style="font-size:12px;margin-top:3px"><span>${esc(b.Category || '')}${+b.PerPerson > 0 ? ' · ' + fmt(b.PerPerson) + ' × ' + r.n + (r.n === 1 ? ' person' : ' people') : ''}${kids.length ? ' · ' + kids.length + ' sub categor' + (kids.length === 1 ? 'y' : 'ies') : ''} · spent ${fmt(r.spent)}</span><span style="color:${spendColor(pc)};font-weight:600">${r.left < -0.5 ? 'Over by ' + fmt(-r.left) : 'Left ' + fmt(r.left)}</span></div>
-      ${notFor(b).length ? `<div class="mute" style="font-size:12px;margin-top:2px">Not for: ${esc(notFor(b).join(', '))}</div>` : ''}
+  const leftTxt = r => r.left < -0.5 ? 'over ' + fmt(-r.left) : 'left ' + fmt(r.left);
+  const line = r => { const pc = r.plan > 0 ? r.spent / r.plan * 100 : 0, nf = notFor(r.b);
+    return `<div class="mute" style="font-size:12px;margin-top:2px"><span style="color:${spendColor(pc)};font-weight:600">${leftTxt(r)}</span> · spent ${fmt(r.spent)}${+r.b.PerPerson > 0 ? ' · ' + fmt(r.b.PerPerson) + '×' + r.n : ''}${nf.length ? ' · not ' + esc(nf.join(', ')) : ''}</div>`; };
+  const kidRow = r => `<div style="padding:6px 0 2px 12px;border-top:1px dashed var(--line)" onclick="event.stopPropagation();editBud('${r.b.ID}')"><div class="row" style="font-size:14.5px"><span>↳ ${esc(r.b.Item)}</span><b>${fmt(r.plan)}</b></div>${line(r)}${btns(r)}${panel(r)}</div>`;
+  const card = r => { const kids = st.budRows.filter(k => r.kids.includes(k.b.ID));
+    return `<div class="card tight" style="padding:10px 12px" onclick="editBud('${r.b.ID}')"><div class="row"><b>${esc(r.b.Item)}</b><b>${fmt(r.plan)}</b></div>${progress(r.spent, r.plan, 'thin', true)}${line(r)}
       ${kids.map(kidRow).join('')}${btns(r)}${panel(r)}</div>`; };
   const mains = st.budRows.filter(r => !r.sub);
-  return `<div class="card tight"><div class="row"><span class="mute">Total budget</span><b>${fmt(st.budget)}</b></div><div class="row" style="margin-top:4px"><span class="mute">Spent on budgeted categories</span><b>${fmt(st.spentColl - st.unbud)}</b></div>
-    <div class="row" style="margin-top:4px"><span class="mute">Still to pay (budget left)</span><b>${fmt(st.stillToPay)}</b></div>${st.unbud > 0.5 ? `<div class="row" style="margin-top:4px"><span class="mute">Spent outside the budget list</span><b>${fmt(st.unbud)}</b></div>` : ''}</div>
+  return `<div class="card tight" style="padding:10px 12px"><div class="row"><span class="mute">Budget</span><b>${fmt(st.budget)}</b></div><div class="row mute" style="font-size:12px;margin-top:2px"><span>Spent ${fmt(st.spentColl - st.unbud)}${st.unbud > 0.5 ? ' (+' + fmt(st.unbud) + ' outside budget)' : ''}</span><span>To pay ${fmt(st.stillToPay)}</span></div></div>
   <div class="actions" style="grid-template-columns:1fr"><button onclick="editBud(null)">＋ Budget category</button></div>
-  ${mains.length ? `<div class="mute" style="font-size:12px;margin:0 0 6px">Tap a category to edit it. Use the buttons to see each member's amount, the actual spend, or to add a sub category.</div>${mains.map(card).join('')}` : '<div class="empty">No budget categories yet.<br>Add Hotel, Transport, Food… with the planned amount, or an amount per person. Then add sub categories under any of them.</div>'}`;
+  ${mains.length ? mains.map(card).join('') : '<div class="empty">No budget categories yet.<br>Add Hotel, Transport, Food… with the planned amount, or an amount per person. Then add sub categories under any of them.</div>'}`;
 }
 
 function tripExpTab(t, st) {
