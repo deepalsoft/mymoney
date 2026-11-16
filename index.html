@@ -35,10 +35,12 @@
     Trips: ['ID','Name','Destination','Start','End','Account','PerHead','Status','Note'],
     TripMembers: ['ID','TripID','Name','Expected','Phone','Note','Role','Weight'],
     TripPay: ['ID','TripID','Member','Date','Amount','Account','Kind','Note'],
-    TripBudget: ['ID','TripID','Item','Category','Amount','Note','PerPerson','Exclude','Parent'],
+    TripBudget: ['ID','TripID','Item','Category','Amount','Note','PerPerson','Exclude','Parent','Rate','Qty'],
+    TripPlans: ['ID','TripID','Name','Members','Note','Chosen'],
+    TripPlanItems: ['ID','TripID','PlanID','Item','Category','Rate','Qty','Amount','Parent','Note'],
     TripExp: ['ID','TripID','Date','Item','Category','Amount','Account','BudgetItem','Kind','Member','Status','Note','Source','PaidBy','Exclude','Photo']
   };
-  const VER = 'v30';
+  const VER = 'v31';
   window.APP_VER = VER;
   const LS = window.localStorage;
   const cfg = () => ({ url: LS.getItem('mm_url') || '', key: LS.getItem('mm_key') || '' });
@@ -156,7 +158,8 @@
       if ((name === 'Transactions' || name === 'TripExp') && row && String(row.Photo).indexOf('pending-') === 0) cancelPhoto(row.Photo);
       if (name === 'Transactions') { dropWhere('LoanPayments', 'TxID', id); dropWhere('CardPay', 'TxID', id); }
       dropWhere(name, 'ID', id);
-      if (name === 'Trips') ['TripMembers', 'TripPay', 'TripBudget', 'TripExp'].forEach(n => dropWhere(n, 'TripID', id));
+      if (name === 'Trips') ['TripMembers', 'TripPay', 'TripBudget', 'TripExp', 'TripPlans', 'TripPlanItems'].forEach(n => dropWhere(n, 'TripID', id));
+      if (name === 'TripPlans') dropWhere('TripPlanItems', 'PlanID', id);
       if (name === 'Loans') dropWhere('LoanPayments', 'LoanID', id);
       if (name === 'Assets') { dropWhere('InvTx', 'AssetID', id); dropWhere('Prices', 'AssetID', id); }
     },
@@ -683,7 +686,7 @@ svg text{fill:var(--mute)}
 /* Base currency LKR. Budgets, goals and totals are in LKR.
    USD accounts keep their balance in USD. Every USD transaction stores the rate used,
    and every rate update is saved as a new row in the Rates sheet (history is never overwritten). */
-let D = {Categories:[],Accounts:[],Transactions:[],Goals:[],Settings:[],Rates:[],Loans:[],LoanPayments:[],AccBudgets:[],Assets:[],InvTx:[],Prices:[],BudgetLog:[],CardPay:[],CardPlans:[],Trips:[],TripMembers:[],TripPay:[],TripBudget:[],TripExp:[]};
+let D = {Categories:[],Accounts:[],Transactions:[],Goals:[],Settings:[],Rates:[],Loans:[],LoanPayments:[],AccBudgets:[],Assets:[],InvTx:[],Prices:[],BudgetLog:[],CardPay:[],CardPlans:[],Trips:[],TripMembers:[],TripPay:[],TripBudget:[],TripExp:[],TripPlans:[],TripPlanItems:[]};
 let homeAcct = null, booted = false;     // homeAcct null = not chosen yet, use the default account
 let homeOpen = null, stmtFrom = null, moreEdit = false;
 let tab = 'home', M = null, homeAll = false, reorder = false, sub = null, invKind = 'Unit Trust', budAcct = null, stmtAcc = null, stmtShown = 40, showSettled = false, reopen = null;
@@ -702,7 +705,7 @@ const PAL = ['#0f766e','#c2410c','#2563eb','#a21caf','#ca8a04','#0891b2','#dc262
 const byOrder = (a, b) => (+a.Order || 1e9) - (+b.Order || 1e9);
 
 function setData(d) {
-  D = Object.assign({Settings: [], Rates: [], Loans: [], LoanPayments: [], AccBudgets: [], Assets: [], InvTx: [], Prices: [], BudgetLog: [], CardPay: [], CardPlans: [], Trips: [], TripMembers: [], TripPay: [], TripBudget: [], TripExp: []}, d);
+  D = Object.assign({Settings: [], Rates: [], Loans: [], LoanPayments: [], AccBudgets: [], Assets: [], InvTx: [], Prices: [], BudgetLog: [], CardPay: [], CardPlans: [], Trips: [], TripMembers: [], TripPay: [], TripBudget: [], TripExp: [], TripPlans: [], TripPlanItems: []}, d);
   D.Categories.sort(byOrder); D.Accounts.sort(byOrder);
 }
 function call(fn, ...args) {
@@ -1803,10 +1806,17 @@ function tripMembersTab(t, st) {
   ${st.donExp.length ? `<div class="mute" style="font-size:12px;margin:8px 0 2px">Spent from the donation fund</div><div class="card tight">${st.donExp.map(e => `<div class="row" style="padding:7px 0;border-top:1px solid var(--line)" onclick="editTripExp('${e.ID}')"><span style="min-width:0"><span class="mute">${esc(String(e.Date).slice(5))}</span> ${esc(e.Item)}</span><b class="exp">${fmt(e.Amount)}</b></div>`).join('')}</div>` : ''}`;
 }
 
+let budView = 'bud', planOpen = null, planCmp = false;
+const uid8 = () => Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join('');
+function tripBudgetTab(t, st) {
+  if (reorder) return tripBudgetMain(t, st);
+  const sg = `<div class="seg" style="margin-bottom:10px"><button class="${budView === 'bud' ? 'on' : ''}" onclick="budView='bud';render()">Trip budget</button><button class="${budView === 'opt' ? 'on' : ''}" onclick="budView='opt';planOpen=null;planCmp=false;render()">Budget options (${D.TripPlans.filter(x => x.TripID === t.ID).length})</button></div>`;
+  return sg + (budView === 'opt' ? tripPlansView(t, st) : tripBudgetMain(t, st));
+}
 let budOpen = null;
 function budShow(id) { budOpen = budOpen === id ? null : id; render(); }
 const TCAT_IC = {'Transport': '🚐', 'Accommodation': '🏨', 'Food': '🍽️', 'Tickets / activities': '🎟️', 'Shopping': '🛍️', 'Booking': '📌', 'Insurance / visa': '🛂', 'Other': '🧾'};
-function tripBudgetTab(t, st) {
+function tripBudgetMain(t, st) {
   const notFor = b => { const x = new Set(exclSet(b.Exclude)); selfPaid(st.exps, b.Item).forEach(n => x.add(n)); const q = b.Parent && st.bud.find(y => y.Item === b.Parent && !y.Parent); if (q) exclSet(q.Exclude).forEach(n => x.add(n)); return Array.from(x); };
   const mains = st.budRows.filter(r => !r.sub), kidsOf2 = r => st.budRows.filter(k => r.kids.includes(k.b.ID));
   if (reorder) return `<div class="mute" style="margin-bottom:8px">Drag ⠿ to change the order. A sub budget moves inside its budget.</div><div class="card tight">${mains.map(r => `<div class="dr" data-kind="tbud" data-group="root" data-id="${r.b.ID}"><div class="arow row"><b>${esc(r.b.Item)}</b><span class="grip">⠿</span></div>${kidsOf2(r).map(k => `<div class="sub dr" data-kind="tbud" data-group="${r.b.ID}" data-id="${k.b.ID}"><div class="arow row"><span>${esc(k.b.Item)}</span><span class="grip">⠿</span></div></div>`).join('')}</div>`).join('') || '<div class="empty">No budgets yet.</div>'}</div>
@@ -1822,7 +1832,7 @@ function tripBudgetTab(t, st) {
       <div><div class="mute" style="font-size:11px;margin-bottom:2px">SPENT</div>${right}<div class="row" style="border-top:1px solid var(--line);margin-top:2px;padding-top:2px"><span class="mute">Total</span><b>${fmt(sum(l, e => e.Amount))}</b></div></div></div>
       <div style="text-align:right;margin-top:6px"><span class="chip" style="cursor:pointer" onclick="editBud('${r.b.ID}')">✎ Edit</span>${r.sub ? '' : ` <span class="chip" style="cursor:pointer" onclick="editBud(null,'${qs(r.b.Item)}')">＋ Sub budget</span>`}</div></div>`; };
   const bRow = (r, nested, col) => { const b = r.b, pc = r.plan > 0 ? r.spent / r.plan * 100 : 0, nf = notFor(b), ic = TCAT_IC[b.Category] || '🏷️';
-    return `<div class="ac-r ${nested ? 'nest' : ''}" onclick="budShow('${b.ID}')"><span class="ac-ic" style="--t:${col}">${ic}</span><div class="ac-n"><b>${esc(b.Item)}</b><small>${r.left < -0.5 ? 'over ' + fmt(-r.left) : 'left ' + fmt(r.left)} · spent ${fmt(r.spent)}${+b.PerPerson > 0 ? ' · ' + fmt(b.PerPerson) + '×' + (Math.round(r.n * 10) / 10) : ''}${nf.length ? ' · not ' + esc(nf.join(', ')) : ''}</small></div><div class="ac-b"><b>${fmt(r.plan)}</b><small style="color:${spendColor(pc)}">${r.plan > 0 ? Math.round(pc) + '%' : ''}</small></div></div>
+    return `<div class="ac-r ${nested ? 'nest' : ''}" onclick="budShow('${b.ID}')"><span class="ac-ic" style="--t:${col}">${ic}</span><div class="ac-n"><b>${esc(b.Item)}</b><small>${r.left < -0.5 ? 'over ' + fmt(-r.left) : 'left ' + fmt(r.left)} · spent ${fmt(r.spent)}${+b.Rate > 0 && +b.Qty > 0 ? ' · ' + fmt(+b.Rate) + ' × ' + (+b.Qty) : ''}${+b.PerPerson > 0 ? ' · ' + fmt(b.PerPerson) + '×' + (Math.round(r.n * 10) / 10) : ''}${nf.length ? ' · not ' + esc(nf.join(', ')) : ''}</small></div><div class="ac-b"><b>${fmt(r.plan)}</b><small style="color:${spendColor(pc)}">${r.plan > 0 ? Math.round(pc) + '%' : ''}</small></div></div>
       <div style="padding:0 0 8px ${nested ? 50 : 50}px">${progress(r.spent, r.plan, 'thin', true)}</div>${budOpen === b.ID ? panel(r) : ''}`; };
   const group = (r, gi) => { const col = BANKCOL[gi % BANKCOL.length], st2 = `--c:${col[0]};--ct:${col[1]}`, ks = kidsOf2(r);
     if (!ks.length) return `<div class="ac-card" style="${st2}">${bRow(r, false, col[0])}</div>`;
@@ -1833,6 +1843,99 @@ function tripBudgetTab(t, st) {
     <div class="hchips"><span class="hchip">Spent ${short(st.spentColl - st.unbud)}</span><span class="hchip">To pay ${short(st.stillToPay)}</span>${st.unbud > 0.5 ? `<span class="hchip">Outside budget ${short(st.unbud)}</span>` : ''}</div></div>
   ${mains.length ? mains.map((r, i) => group(r, i)).join('') : '<div class="empty">No budgets yet.<br>Add Food, Hotel, Transport… then add sub budgets under them, like accounts under a bank.</div>'}
   <div class="actions" style="grid-template-columns:1fr 1fr"><button onclick="editBud(null)">＋ Budget</button><button onclick="reorder=true;render()">↕ Reorder</button></div>`;
+}
+
+/* ---------- budget options: make several budgets, compare them, send a report, pick the best ---------- */
+const planOf = id => D.TripPlans.find(x => x.ID === id);
+function bplanCalc(p, units) {
+  const items = D.TripPlanItems.filter(x => x.PlanID === p.ID), mainsI = items.filter(x => !x.Parent || !items.some(y => y.Item === x.Parent && !y.Parent));
+  const rows = mainsI.map(m => { const kids = items.filter(k => k.Parent === m.Item && k.ID !== m.ID), ks = sum(kids, k => +k.Amount || 0), own = +m.Amount || 0; return {it: m, kids, amt: own > 0 ? own : ks, ks, own}; });
+  const total = sum(rows, r => r.amt), u = +p.Members > 0 ? +p.Members : units;
+  return {rows, total, u, per: u > 0 ? total / u : null, count: items.length};
+}
+const planUnits = t => Math.max(0, sum(D.TripMembers.filter(m => m.TripID === t.ID && m.Role !== 'Donor'), m => +m.Weight > 0 ? +m.Weight : 1));
+function planCompare(t) {                                  // rows of the comparison, matched by item name
+  const plans = D.TripPlans.filter(x => x.TripID === t.ID), calcs = plans.map(p => bplanCalc(p, planUnits(t))), keys = [], lbl = {};
+  calcs.forEach(c => c.rows.forEach(r => { const k = String(r.it.Item).toLowerCase(); if (keys.indexOf(k) < 0) { keys.push(k); lbl[k] = r.it.Item; } }));
+  const rows = [];
+  keys.forEach(k => {
+    rows.push({label: lbl[k], sub: false, vals: calcs.map(c => { const r = c.rows.find(x => String(x.it.Item).toLowerCase() === k); return r ? r.amt : null; })});
+    const subKeys = []; calcs.forEach(c => { const r = c.rows.find(x => String(x.it.Item).toLowerCase() === k); if (r) r.kids.forEach(q => { const kk = String(q.Item).toLowerCase(); if (subKeys.indexOf(kk) < 0) subKeys.push(kk); lbl[k + '|' + kk] = q.Item; }); });
+    subKeys.forEach(kk => rows.push({label: lbl[k + '|' + kk], sub: true, vals: calcs.map(c => { const r = c.rows.find(x => String(x.it.Item).toLowerCase() === k); const q = r && r.kids.find(z => String(z.Item).toLowerCase() === kk); return q ? (+q.Amount || 0) : null; })}));
+  });
+  return {plans, calcs, rows};
+}
+function tripPlansView(t, st) {
+  const plans = D.TripPlans.filter(x => x.TripID === t.ID), U = planUnits(t);
+  if (planOpen && planOf(planOpen)) return planDetail(t, planOf(planOpen), U);
+  if (planCmp && plans.length >= 2) return planCompareView(t);
+  const card = p => { const c = bplanCalc(p, U); return `<div class="card tight" style="border-left:5px solid ${p.Chosen === 'Yes' ? '#16a34a' : '#7c3aed'}" onclick="planOpen='${p.ID}';render()"><div class="row"><b>${esc(p.Name)}</b>${p.Chosen === 'Yes' ? '<span class="chip ok">✓ In use</span>' : ''}</div>
+      <div class="row" style="margin-top:4px"><span class="mute" style="font-size:12.5px">${c.count} item${c.count === 1 ? '' : 's'}${c.per !== null ? ' · ' + fmt(Math.round(c.per)) + ' per member (÷ ' + (Math.round(c.u * 10) / 10) + ')' : ''}</span><b style="font-size:17px">${fmt(c.total)}</b></div></div>`; };
+  return `<div class="mute" style="font-size:12.5px;margin-bottom:8px">Make different budgets for the same trip, compare them side by side, and send the comparison to the members so everyone can choose.</div>
+  ${plans.length ? plans.map(card).join('') : '<div class="empty">No budget options yet.<br>Add “Option 1”, “Option 2”… each with its own items.</div>'}
+  <div class="actions" style="grid-template-columns:1fr 1fr"><button onclick="editPlan(null)">＋ Option</button><button onclick="${plans.length >= 2 ? 'planCmp=true;render()' : "alert('Add at least two options to compare.')"}">📊 Compare</button></div>
+  ${plans.length ? `<div class="actions" style="grid-template-columns:1fr"><button onclick="planReport('${t.ID}')">📄 Share the comparison report</button></div>` : ''}`;
+}
+function planDetail(t, p, U) {
+  const c = bplanCalc(p, U);
+  const itemRow = (it, nested) => `<div class="row" style="padding:7px 0 7px ${nested ? 16 : 0}px;border-top:1px solid var(--line);${nested ? 'font-size:14px' : ''}" onclick="editPlanItem('${it.ID}')"><span style="min-width:0">${nested ? '↳ ' : ''}${nested ? esc(it.Item) : '<b>' + esc(it.Item) + '</b>'}${+it.Rate > 0 && +it.Qty > 0 ? `<div class="mute" style="font-size:12px">${fmt(+it.Rate)} × ${+it.Qty}</div>` : ''}</span><b>${fmt(+it.Amount || 0)}</b></div>`;
+  const body = c.rows.map(r => `${r.kids.length && !(r.own > 0) ? `<div class="row" style="padding:7px 0;border-top:1px solid var(--line)" onclick="editPlanItem('${r.it.ID}')"><b>${esc(r.it.Item)}</b><b>${fmt(r.amt)}</b></div>` : itemRow(r.it, false)}${r.kids.map(k => itemRow(k, true)).join('')}`).join('');
+  return `<div class="back" onclick="planOpen=null;render()">‹ Budget options</div>
+  <div class="hero"><div class="hsm">${esc(p.Name)}${p.Chosen === 'Yes' ? ' · in use' : ''}</div><div class="big">${fmt(c.total)}</div><div class="hchips">${c.per !== null ? `<span class="hchip">${fmt(Math.round(c.per))} per member</span><span class="hchip">÷ ${Math.round(c.u * 10) / 10}</span>` : '<span class="hchip">Add members to see the per-member cost</span>'}</div></div>
+  <div class="card tight" style="padding:4px 12px">${body || '<div class="empty">No items yet. Tap ＋ Item.</div>'}</div>
+  ${p.Note ? `<div class="mute" style="font-size:12.5px;margin:4px 0 8px">${esc(p.Note)}</div>` : ''}
+  <div class="actions" style="grid-template-columns:1fr 1fr"><button onclick="editPlanItem(null,'${p.ID}')">＋ Item</button><button onclick="editPlan('${p.ID}')">✎ Edit option</button><button onclick="dupPlan('${p.ID}')">⧉ Duplicate</button><button onclick="applyPlan('${p.ID}')">✓ Use as trip budget</button></div>`;
+}
+function planCompareView(t) {
+  const C = planCompare(t), n = C.plans.length, tot = C.calcs.map(c => c.total), low = Math.min.apply(null, tot), per = C.calcs.map(c => c.per);
+  const grid = `grid-template-columns:minmax(96px,1.3fr) repeat(${n},minmax(78px,1fr))`, W = n > 3 ? 'min-width:' + (96 + n * 84) + 'px' : '';
+  const cellStyle = 'text-align:right;white-space:nowrap';
+  const rows = C.rows.map(r => { const vs = r.vals.filter(v => v !== null), mn = vs.length > 1 ? Math.min.apply(null, vs) : null, differ = vs.length > 1 && Math.max.apply(null, vs) !== mn;
+    return `<div style="display:grid;${grid};gap:4px;padding:5px 0;border-top:1px solid var(--line);font-size:${r.sub ? 12.5 : 13.5}px;${r.sub ? 'color:var(--mute)' : ''}"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;${r.sub ? 'padding-left:10px' : 'font-weight:600'}">${r.sub ? '↳ ' : ''}${esc(r.label)}</span>${r.vals.map(v => `<span style="${cellStyle};${differ && v === mn ? 'color:#16a34a;font-weight:700' : ''}">${v === null ? '–' : fmt(v)}</span>`).join('')}</div>`; }).join('');
+  return `<div class="back" onclick="planCmp=false;render()">‹ Budget options</div><h2 style="margin-top:4px">Compare options</h2>
+  <div class="mute" style="font-size:12.5px;margin-bottom:6px">Green = the lowest for that item. “–” = not in that option.</div>
+  <div class="card tight" style="padding:6px 12px;overflow-x:auto"><div style="${W}"><div style="display:grid;${grid};gap:4px;padding:4px 0;font-size:12px;font-weight:700"><span class="mute">ITEM</span>${C.plans.map(p => `<span style="${cellStyle};overflow:hidden;text-overflow:ellipsis" onclick="planOpen='${p.ID}';planCmp=false;render()">${esc(p.Name)}</span>`).join('')}</div>${rows}
+    <div style="display:grid;${grid};gap:4px;padding:7px 0 3px;border-top:2px solid var(--line);font-size:14px;font-weight:700"><span>Total</span>${tot.map(v => `<span style="${cellStyle};${C.plans.length > 1 && v === low ? 'color:#16a34a' : ''}">${fmt(v)}</span>`).join('')}</div>
+    <div style="display:grid;${grid};gap:4px;padding:3px 0;font-size:13px"><span class="mute">Per member</span>${per.map(v => `<span style="${cellStyle}">${v === null ? '–' : fmt(Math.round(v))}</span>`).join('')}</div>
+    <div style="display:grid;${grid};gap:4px;padding:3px 0;font-size:12.5px"><span class="mute">vs lowest</span>${tot.map(v => `<span style="${cellStyle};color:${v === low ? '#16a34a' : '#c2410c'}">${v === low ? 'lowest' : '+' + fmt(v - low)}</span>`).join('')}</div></div></div>
+  <div class="actions" style="grid-template-columns:1fr 1fr"><button onclick="planReport('${t.ID}')">📄 Share report</button><button onclick="planCmp=false;render()">Done</button></div>`;
+}
+function editPlan(id) {
+  const t = trips().find(x => x.ID === tripId), p0 = id ? planOf(id) : null, newId = uid8();
+  openForm(id ? 'Edit budget option' : 'New budget option', 'TripPlans', [{k:'Name', l:'Option name (e.g. Option 1 – Half board)', req:true}, {k:'Members', l:'Number of members to divide by (blank = the current members)', t:'number'}, {k:'Note', l:'Note (shown in the report)'}],
+    p0 || {TripID: tripId, ID: newId, Chosen: ''}, {submit: o => { call('save', 'TripPlans', o); if (!id) { planOpen = o.ID; budView = 'opt'; } }});
+}
+function editPlanItem(id, planId) {
+  const it0 = id ? D.TripPlanItems.find(x => x.ID === id) : null, pid = it0 ? it0.PlanID : planId, all = D.TripPlanItems.filter(x => x.PlanID === pid), MAIN = '(main item)';
+  const hasKids = !!it0 && all.some(x => x.Parent === it0.Item), mains = all.filter(x => !x.Parent && (!it0 || x.ID !== it0.ID)).map(x => x.Item);
+  const v = it0 ? Object.assign({}, it0, {ParentSel: it0.Parent && mains.indexOf(it0.Parent) >= 0 ? it0.Parent : MAIN}) : {TripID: tripId, PlanID: pid, Category: TRIP_CATS[0], ParentSel: MAIN};
+  const fields = [{k:'Item', l:'Item (e.g. Accommodation, Bites, Bottles)', req:true}];
+  if (!hasKids && mains.length) fields.push({k:'ParentSel', l:'Under (pick an item to make this a sub item)', t:'select', o:[MAIN].concat(mains)});
+  fields.push({k:'Category', l:'Category', t:'select', o:tripCats()}, {k:'NewCat', l:'Or create a new category'}, {k:'Rate', l:'Rate (LKR per unit)', t:'number'}, {k:'Qty', l:'Quantity (e.g. 3 nights, 6 people)', t:'number'},
+    {k:'Amount', l:'Amount (LKR). Filled from rate × quantity when both are entered; a main item with sub items can stay 0', t:'number'}, {k:'Note', l:'Note'});
+  openForm(id ? 'Edit item' : 'New item', 'TripPlanItems', fields, v, {noDelete: hasKids,
+    validate: o => { if (+o.Rate > 0 && +o.Qty > 0) o.Amount = Math.round(o.Rate * o.Qty * 100) / 100; return all.some(x => x.Item.toLowerCase() === String(o.Item).toLowerCase() && x.ID !== o.ID) ? 'This option already has an item named “' + o.Item + '”.' : ''; },
+    prep: o => { applyNewCat(o); o.Parent = o.ParentSel && o.ParentSel !== MAIN ? o.ParentSel : ''; delete o.ParentSel; o.TripID = tripId; o.PlanID = pid; },
+    submit: o => { call('save', 'TripPlanItems', o); if (it0 && hasKids && o.Item !== it0.Item) all.filter(x => x.Parent === it0.Item).forEach(k => call('save', 'TripPlanItems', Object.assign({}, k, {Parent: o.Item}))); }});
+}
+function dupPlan(id) {
+  const p = planOf(id); if (!p) return; const name = prompt('Name for the copy', p.Name + ' (copy)'); if (!name) return;
+  const np = Object.assign({}, p, {ID: uid8(), Name: name, Chosen: ''}); call('save', 'TripPlans', np);
+  D.TripPlanItems.filter(x => x.PlanID === id).forEach(x => call('save', 'TripPlanItems', Object.assign({}, x, {ID: uid8(), PlanID: np.ID})));
+  planOpen = np.ID; render();
+}
+function applyPlan(id) {
+  const p = planOf(id), t = trips().find(x => x.ID === tripId); if (!p || !t) return;
+  const items = D.TripPlanItems.filter(x => x.PlanID === id), cur = D.TripBudget.filter(b => b.TripID === tripId), names = items.map(x => String(x.Item).toLowerCase());
+  const used = b => D.TripExp.some(e => e.TripID === tripId && (e.BudgetItem === b.Item)) || cur.some(k => k.Parent === b.Item && D.TripExp.some(e => e.TripID === tripId && e.BudgetItem === k.Item));
+  const drop = cur.filter(b => names.indexOf(String(b.Item).toLowerCase()) < 0 && !used(b)), keep = cur.filter(b => names.indexOf(String(b.Item).toLowerCase()) < 0 && used(b));
+  if (!confirm('Use “' + p.Name + '” as the trip budget?\n\n• ' + items.length + ' item' + (items.length === 1 ? '' : 's') + ' are added or updated.\n• ' + drop.length + ' current budget item' + (drop.length === 1 ? '' : 's') + ' that are not in this option are removed.' + (keep.length ? '\n• ' + keep.length + ' with expenses recorded are kept.' : '') + '\n\nExpenses you already recorded are not changed.')) return;
+  const sorted = items.filter(x => !x.Parent).concat(items.filter(x => x.Parent));
+  sorted.forEach(x => { const ex = cur.find(b => String(b.Item).toLowerCase() === String(x.Item).toLowerCase());
+    call('save', 'TripBudget', Object.assign({}, ex || {TripID: tripId, Exclude: '', Note: ''}, {Item: ex ? ex.Item : x.Item, Category: x.Category, Amount: +x.Amount || 0, Rate: x.Rate, Qty: x.Qty, PerPerson: 0, Parent: x.Parent || ''})); });
+  drop.forEach(b => call('remove', 'TripBudget', b.ID));
+  D.TripPlans.filter(q => q.TripID === tripId).forEach(q => { const f = q.ID === id ? 'Yes' : ''; if ((q.Chosen || '') !== f) call('save', 'TripPlans', Object.assign({}, q, {Chosen: f})); });
+  budView = 'bud'; planOpen = null; render();
 }
 
 function tripExpTab(t, st) {
@@ -1943,14 +2046,15 @@ function editBud(id, parent) {
   const fields = [{k:'Item', l:'Budget name (e.g. Food, or Bites under Food)', req:true}];
   if (!hasKids && mains.length) fields.push({k:'ParentSel', l:'Under (pick a budget to make this a sub budget)', t:'select', o:[MAIN].concat(mains)});
   fields.push({k:'Category', l:'Category', t:'select', o:tripCats()}, {k:'NewCat', l:'Or create a new category (e.g. Gifts)'},
-    {k:'Amount', l:'Planned amount (LKR). For a main budget with sub budgets this is the total; leave 0 to use the sum of the subs', t:'number'},
+    {k:'Rate', l:'Rate (LKR per unit). Rate × quantity = amount', t:'number'}, {k:'Qty', l:'Quantity (e.g. 3 nights, 6 people)', t:'number'},
+    {k:'Amount', l:'Planned amount (LKR). Filled from rate × quantity when both are entered. For a main budget with sub budgets this is the total; leave 0 to use the sum of the subs', t:'number'},
     {k:'PerPerson', l:'Or the amount per person (LKR), e.g. 5000 for a room', t:'number'});
   if (!isSub0) fields.push({k:'SubText', l: hasKids ? 'Add more sub budgets: name and amount, e.g. Bites 500, Noodles 200' : 'Sub budgets (optional): name and amount, e.g. Bites 500, Noodles 200'});
   fields.push({k:'Note', l:'Note'});
   const kidsNow = b0 ? all.filter(x => x.Parent === b0.Item) : [];
   const hint = hasKids ? `<div class="mute" style="font-size:12px;margin:0 0 8px">Sub budgets: ${kidsNow.map(k => esc(k.Item) + ' ' + fmt(+k.Amount || 0)).join(' · ')}. Tap one in the list to edit it. They are part of this budget's total.</div>` : '';
   openForm(id ? 'Edit budget' : 'New budget', 'TripBudget', fields, v, {extra: hint + excHtml(attNames(), exclSet(v.Exclude)), noDelete: hasKids,
-    validate: o => { const par = parOfO(o);
+    validate: o => { const par = parOfO(o); if (+o.Rate > 0 && +o.Qty > 0) o.Amount = Math.round(o.Rate * o.Qty * 100) / 100;
       if (all.some(x => x.Item === o.Item && x.ID !== o.ID)) return 'There is already a budget named “' + o.Item + '”. Use a different name.';
       if (par && !(+o.Amount > 0 || +o.PerPerson > 0)) return 'Enter a planned amount or an amount per person';
       if (par && String(o.SubText || '').trim()) return 'A sub budget cannot have its own sub budgets.';
@@ -2153,6 +2257,89 @@ function pagesToPdf(pages) {
   str('xref\n0 ' + total + '\n0000000000 65535 f \n'); for (let i = 1; i < total; i++) str(String(offs[i]).padStart(10, '0') + ' 00000 n \n');
   str('trailer\n<< /Size ' + total + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF');
   const out = new Uint8Array(off); let p0 = 0; parts.forEach(u => { out.set(u, p0); p0 += u.length; }); return out;
+}
+function drawPlanPages(t) {
+  const W = 1190, H = 1684, MG = 64, CW = W - 2 * MG, FONT = '-apple-system, "Segoe UI", Helvetica, Arial, sans-serif', pages = [];
+  const org = getSet('UserName') || '', gen = new Date().toLocaleDateString(undefined, {day: 'numeric', month: 'long', year: 'numeric'}), R = x => Math.round(x);
+  let cv, g, y;
+  const newPage = () => { cv = document.createElement('canvas'); cv.width = W; cv.height = H; g = cv.getContext('2d'); g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H); pages.push(cv); y = MG; };
+  const font = (sz, w) => { g.font = (w || 400) + ' ' + sz + 'px ' + FONT; };
+  const txt = (s, x, yy, sz, w, col, al) => { font(sz, w); g.fillStyle = col || '#16302b'; g.textAlign = al || 'left'; g.textBaseline = 'alphabetic'; g.fillText(String(s), x, yy); };
+  const trunc = (s, maxW, sz, w) => { s = String(s == null ? '' : s); font(sz, w); if (g.measureText(s).width <= maxW) return s; while (s.length > 1 && g.measureText(s + '…').width > maxW) s = s.slice(0, -1); return s + '…'; };
+  const rr = (x, yy, w, h, r, fill) => { g.beginPath(); g.moveTo(x + r, yy); g.arcTo(x + w, yy, x + w, yy + h, r); g.arcTo(x + w, yy + h, x, yy + h, r); g.arcTo(x, yy + h, x, yy, r); g.arcTo(x, yy, x + w, yy, r); g.closePath(); g.fillStyle = fill; g.fill(); };
+  const num2 = x => Math.round(+x || 0).toLocaleString();
+  const need = h => { if (y + h > H - 96) newPage(); };
+  const bar = (label, a, b, col, right) => { need(96); txt(label, MG, y + 28, 26, 600, '#16302b'); txt(right, W - MG, y + 28, 24, 400, '#51706a', 'right'); rr(MG, y + 44, CW, 22, 11, '#e6efed'); const pc = b > 0 ? Math.max(0, Math.min(a / b, 1)) : 0; if (pc > 0) rr(MG, y + 44, Math.max(24, CW * pc), 22, 11, col); y += 96; };
+  const boxes = (list, cols, fill, colr) => { const bw = (CW - 20 * (cols - 1)) / cols, rows = Math.ceil(list.length / cols); need(rows * 128);
+    list.forEach((b, i) => { const bx = MG + (i % cols) * (bw + 20), by = y + Math.floor(i / cols) * 128; rr(bx, by, bw, 112, 18, fill); txt(trunc(b[0], bw - 36, 22, 400), bx + 22, by + 40, 22, 400, '#51706a'); txt(trunc(b[1], bw - 44, 33, 700), bx + 22, by + 86, 33, 700, (colr && colr[i]) || '#16302b'); });
+    y += rows * 128 + 10; };
+  const title = (label, sub, c1, c2) => { need(150); const gr = g.createLinearGradient(MG, y, W - MG, y + 110); gr.addColorStop(0, c1); gr.addColorStop(1, c2); rr(MG, y, CW, 110, 22, gr); txt(label, MG + 30, y + 52, 38, 700, '#ffffff'); txt(sub, MG + 30, y + 90, 22, 400, 'rgba(255,255,255,.88)'); y += 110 + 28; };
+  const table = (heading, cols, rows, totalRow) => {
+    if (!rows.length) return;
+    need(46 + 56 + 46 * 2); txt(heading, MG, y + 34, 34, 700, '#5b21b6'); y += 58;
+    const xs = []; let x = MG; cols.forEach(c => { xs.push(x); x += c.w * CW; });
+    const head = () => { rr(MG, y, CW, 48, 10, '#ede9fe'); cols.forEach((c, i) => txt(c.h, c.al === 'r' ? xs[i] + c.w * CW - 14 : xs[i] + 14, y + 32, 22, 700, '#4c1d95', c.al === 'r' ? 'right' : 'left')); y += 48; };
+    head();
+    const line = (r, ri) => { if (y + 46 > H - 96) { newPage(); head(); }
+      if (ri % 2) { g.fillStyle = '#f7f5ff'; g.fillRect(MG, y, CW, 46); }
+      r.cells.forEach((cell, i) => { const c = cols[i], w = r.bold ? 700 : 400; txt(trunc(cell, c.w * CW - 28, 23, w), c.al === 'r' ? xs[i] + c.w * CW - 14 : xs[i] + 14, y + 31, 23, w, (r.color && r.color[i]) || '#16302b', c.al === 'r' ? 'right' : 'left'); });
+      y += 46; };
+    rows.forEach(line);
+    if (totalRow) { g.fillStyle = '#c4b5fd'; g.fillRect(MG, y, CW, 3); y += 3; line({cells: totalRow, bold: true}, 0); }
+    y += 36;
+  };
+  const note = (str, col) => { font(23, 400); let cur = ''; String(str).split(' ').forEach(w => { const test = cur ? cur + ' ' + w : w; if (g.measureText(test).width > CW) { need(36); txt(cur, MG, y + 26, 23, 400, col || '#51706a'); y += 34; cur = w; font(23, 400); } else cur = test; }); need(36); txt(cur, MG, y + 26, 23, 400, col || '#51706a'); y += 44; };
+
+  const T = t, C = planCompare(t), n = C.plans.length, tot = C.calcs.map(c => c.total), low = tot.length ? Math.min.apply(null, tot) : 0;
+  newPage();
+  // ---- banner
+  const gr = g.createLinearGradient(MG, y, W - MG, y + 250); gr.addColorStop(0, '#5b21b6'); gr.addColorStop(1, '#8b5cf6'); rr(MG, y, CW, 250, 28, gr);
+  txt('BUDGET OPTIONS', MG + 36, y + 52, 22, 700, 'rgba(255,255,255,.75)');
+  txt(trunc(t.Name, CW - 72, 58, 700), MG + 36, y + 120, 58, 700, '#ffffff');
+  txt(trunc([t.Destination, tripDates(t)].filter(Boolean).join('  ·  ') || 'Dates to be decided', CW - 72, 28, 400), MG + 36, y + 170, 28, 400, 'rgba(255,255,255,.92)');
+  txt((org ? 'Organizer: ' + org + '   ·   ' : '') + 'Prepared ' + gen, MG + 36, y + 218, 24, 400, 'rgba(255,255,255,.8)');
+  y += 250 + 34;
+  note('Please look at the budget options below and tell the organizer which one you prefer. Every option is for the same trip. The amounts are estimates, and the cost for each member is the total divided between the members.');
+  y += 6;
+  table('Options at a glance', [{h: 'Option', w: .40}, {h: 'Total (LKR)', w: .20, al: 'r'}, {h: 'Per member', w: .20, al: 'r'}, {h: 'vs lowest', w: .20, al: 'r'}],
+    C.plans.map((p, i) => ({cells: [p.Name + (p.Chosen === 'Yes' ? ' (in use)' : ''), num2(tot[i]), C.calcs[i].per === null ? '–' : num2(C.calcs[i].per), tot[i] === low ? 'lowest' : '+' + num2(tot[i] - low)], color: [null, null, null, tot[i] === low ? '#0f766e' : '#c2410c']})), null);
+  if (n >= 2) {
+    const nw = Math.floor(.70 / n * 1000) / 1000, hw = nw * CW - 28;
+    table('Side-by-side comparison (LKR)', [{h: 'Item', w: +(1 - nw * n).toFixed(3)}].concat(C.plans.map(p => ({h: trunc(p.Name, hw, 22, 700), w: nw, al: 'r'}))),
+      C.rows.map(r => { const vs = r.vals.filter(v => v !== null), mn = vs.length > 1 ? Math.min.apply(null, vs) : null, differ = vs.length > 1 && Math.max.apply(null, vs) !== mn;
+        return {cells: [(r.sub ? '   - ' : '') + r.label].concat(r.vals.map(v => v === null ? '–' : num2(v))), color: [null].concat(r.vals.map(v => differ && v === mn ? '#0f766e' : null))}; }),
+      ['Total'].concat(tot.map(v => num2(v))));
+    table('Cost for each member', [{h: 'Option', w: .50}, {h: 'Per member (LKR)', w: .26, al: 'r'}, {h: 'Divided by', w: .24, al: 'r'}],
+      C.plans.map((p, i) => ({cells: [p.Name, C.calcs[i].per === null ? '–' : num2(C.calcs[i].per), C.calcs[i].per === null ? 'add members' : String(Math.round(C.calcs[i].u * 10) / 10)]})), null);
+    note('Green amounts are the lowest for that item. A dash means the item is not part of that option.');
+  }
+  C.plans.forEach((p, i) => { const c = C.calcs[i], rows = [];
+    c.rows.forEach(r => { rows.push({cells: [r.it.Item, +r.it.Rate > 0 && +r.it.Qty > 0 ? num2(+r.it.Rate) : '', +r.it.Rate > 0 && +r.it.Qty > 0 ? String(+r.it.Qty) : '', num2(r.amt)], bold: r.kids.length > 0});
+      r.kids.forEach(k => rows.push({cells: ['   - ' + k.Item, +k.Rate > 0 && +k.Qty > 0 ? num2(+k.Rate) : '', +k.Rate > 0 && +k.Qty > 0 ? String(+k.Qty) : '', num2(+k.Amount || 0)]})); });
+    need(200);
+    table(p.Name + (p.Note ? ' · ' + p.Note : ''), [{h: 'Item', w: .46}, {h: 'Rate', w: .18, al: 'r'}, {h: 'Qty', w: .12, al: 'r'}, {h: 'Amount (LKR)', w: .24, al: 'r'}], rows, ['Total', '', '', num2(c.total)]);
+    if (c.per !== null) note('Per member: LKR ' + num2(c.per) + ' (' + num2(c.total) + ' divided by ' + (Math.round(c.u * 10) / 10) + ').');
+  });
+  pages.forEach((c, i) => { g = c.getContext('2d'); g.fillStyle = '#d9d2f5'; g.fillRect(MG, H - 80, CW, 2); txt(t.Name + ' · budget options · ' + gen, MG, H - 40, 20, 400, '#6b7f7a'); txt('Page ' + (i + 1) + ' of ' + pages.length, W - MG, H - 40, 20, 400, '#6b7f7a', 'right'); });
+  return pages;
+}
+
+function planReport(id) {
+  const t = trips().find(x => x.ID === id); if (!t) return;
+  if (!D.TripPlans.some(x => x.TripID === id)) { alert('Add a budget option first.'); return; }
+  $('#load').style.display = 'block';
+  setTimeout(() => {
+    try {
+      const pages = drawPlanPages(t), bytes = pagesToPdf(pages);
+      lastReport = {bytes, name: ('Budget options - ' + t.Name).replace(/[\\/:*?"<>|]+/g, ' ').trim() + '.pdf', title: t.Name + ' budget options'};
+      M = null;
+      $('#sheet').innerHTML = `<h3>📄 Budget report ready</h3><div class="mute" style="margin-bottom:8px">${pages.length} page${pages.length === 1 ? '' : 's'} · ${(bytes.length / 1024).toFixed(0)} KB · ${esc(lastReport.name)}</div>
+        <img src="${pages[0].toDataURL('image/jpeg', 0.55)}" style="width:100%;border:1px solid var(--line);border-radius:10px">
+        <div class="btns" style="margin-top:12px"><button class="btn" onclick="shareReport()">Share with the group</button><button class="btn ghost" onclick="openReport()">Open / view</button><button class="btn ghost" onclick="saveReport()">Save to device</button><button class="btn ghost" onclick="closeM()">Close</button></div>`;
+      $('#bd').style.display = 'block'; $('#sheet').style.display = 'block';
+    } catch (e) { alert('Could not build the report: ' + e.message); }
+    $('#load').style.display = 'none';
+  }, 40);
 }
 const billCache = {};
 function loadBill(id) {                                      // a bill photo as an image (kept for the session so a second report is instant)
