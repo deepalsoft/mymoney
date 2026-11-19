@@ -34,13 +34,13 @@
     CardPlans: ['ID','Card','Item','Total','Months','Start','Note','Closed'],
     Trips: ['ID','Name','Destination','Start','End','Account','PerHead','Status','Note'],
     TripMembers: ['ID','TripID','Name','Expected','Phone','Note','Role','Weight'],
-    TripPay: ['ID','TripID','Member','Date','Amount','Account','Kind','Note'],
+    TripPay: ['ID','TripID','Member','Date','Amount','Account','Kind','Note','ToMember','TxID'],
     TripBudget: ['ID','TripID','Item','Category','Amount','Note','PerPerson','Exclude','Parent','Rate','Qty'],
     TripPlans: ['ID','TripID','Name','Members','Note','Chosen'],
     TripPlanItems: ['ID','TripID','PlanID','Item','Category','Rate','Qty','Amount','Parent','Note'],
     TripExp: ['ID','TripID','Date','Item','Category','Amount','Account','BudgetItem','Kind','Member','Status','Note','Source','PaidBy','Exclude','Photo']
   };
-  const VER = 'v31';
+  const VER = 'v32';
   window.APP_VER = VER;
   const LS = window.localStorage;
   const cfg = () => ({ url: LS.getItem('mm_url') || '', key: LS.getItem('mm_key') || '' });
@@ -1568,7 +1568,21 @@ const TRIP_CATS = ['Transport', 'Accommodation', 'Food', 'Tickets / activities',
 const CASH = 'Cash / other (not from an account)', NOACC = '(not chosen)';
 let tripId = null, tripTab = 'sum', tripOpenExp = null, expCat = null;
 const tripCats = () => { let c = []; try { c = JSON.parse(getSet('TripCats') || '[]'); } catch (e) {} return TRIP_CATS.concat((Array.isArray(c) ? c : []).filter(x => x && TRIP_CATS.indexOf(x) < 0)); };
-function applyNewCat(o) { const n = String(o.NewCat || '').trim(); delete o.NewCat; if (!n) return; const all = tripCats(); if (all.indexOf(n) < 0) setSet('TripCats', JSON.stringify(all.filter(x => TRIP_CATS.indexOf(x) < 0).concat([n]))); o.Category = n; }
+const customTripCats = () => { let c = []; try { c = JSON.parse(getSet('TripCats') || '[]'); } catch (e) {} return (Array.isArray(c) ? c : []).filter(x => x && TRIP_CATS.indexOf(x) < 0); };
+function applyNewCat(o) {
+  const n = String(o.NewCat || '').trim(); delete o.NewCat;
+  const del = String(o.DelCat || '').trim(); delete o.DelCat;
+  if (del && TRIP_CATS.indexOf(del) < 0) {
+    const left = customTripCats().filter(x => x !== del);
+    setSet('TripCats', JSON.stringify(left));
+    if (o.Category === del) o.Category = TRIP_CATS[0];
+  }
+  if (n) {
+    const all = tripCats();
+    if (all.indexOf(n) < 0) setSet('TripCats', JSON.stringify(customTripCats().concat([n])));
+    o.Category = n;
+  }
+}
 const qs = x => esc(x).replace(/'/g, "\\'");
 function goTrip(tab, cat) { tripTab = tab; expCat = cat || null; reorder = false; render(); window.scrollTo(0, 0); }
 const trips = () => D.Trips || [];
@@ -1729,6 +1743,103 @@ function settleList(P, opt) { return opt === 'few' ? P.few : opt === 'equal' ? P
 function settleText(t, S, opt, round) { const P = settlePlans(S, round), l = settleList(P, opt); return t.Name + ' - settle up (' + (SETTLE_OPTS.find(x => x[0] === opt) || [0, ''])[1] + ')\n' + (l.length ? l.map(x => x.from + ' pays ' + x.to + ': LKR ' + Math.round(x.amt).toLocaleString()).join('\n') : 'Nothing to pay.') + (opt === 'credit' && P.credits.length ? '\nKept as credit: ' + P.credits.map(c => c.name + ' ' + c.v).join(', ') : ''); }
 function shareSettle(id) { const t = trips().find(x => x.ID === id); if (!t) return; const text = settleText(t, tripSettle(t, tripStats(t)), setOpt, setRound);
   if (navigator.share) navigator.share({title: t.Name, text}).catch(() => {}); else if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => alert('Copied. Paste it into your group chat.')); else alert(text); }
+
+function shareTripBudget(id) {
+  const t = trips().find(x => x.ID === id); if (!t) return;
+  const st = tripStats(t), nMem = st.ms.length || 1, per = st.budget > 0 ? st.budget / nMem : 0;
+  let lines = [`📋 ${t.Name} — Planned budget`, `Total: ${fmt(st.budget)}  ·  ${nMem} members  ·  ≈ ${fmt(per)} each`, ''];
+  st.budRows.filter(r => !r.sub).forEach(r => {
+    lines.push(`• ${r.b.Item}: ${fmt(r.plan)} (${r.n} shares)`);
+    st.budRows.filter(k => r.kids.includes(k.b.ID)).forEach(k => lines.push(`    ↳ ${k.b.Item}: ${fmt(k.plan)}`));
+  });
+  lines.push('', 'Member shares:');
+  st.rows.forEach(r => lines.push(`• ${r.m.Name}: ${fmt(Math.round(r.bs || r.base || per))}`));
+  const text = lines.join('\n');
+  shareTextOrImage(t.Name + ' budget', text, () => drawTripBudgetImg(t, st));
+}
+function shareTripActuals(id) {
+  const t = trips().find(x => x.ID === id); if (!t) return;
+  const st = tripStats(t), S = tripSettle(t, st), R = Math.round;
+  let lines = [`📊 ${t.Name} — Actuals & collections`, `Budget ${fmt(st.budget)}  ·  Spent ${fmt(st.spentColl)}  ·  Collected ${fmt(st.collected)}`, `Still to collect: ${fmt(st.toCollect)}  ·  Donation fund: ${fmt(st.donBal)}`, '', 'Members:'];
+  S.rows.forEach(r => {
+    const d = R(r.diff);
+    lines.push(`• ${r.m.Name}: cost ${fmt(R(r.cost))} · paid ${fmt(R(r.collected))} · ${d > 0 ? 'refund ' + fmt(d) : d < 0 ? 'collect ' + fmt(-d) : 'settled'}`);
+  });
+  const text = lines.join('\n');
+  shareTextOrImage(t.Name + ' actuals', text, () => drawTripActualsImg(t, st, S));
+}
+function shareTextOrImage(title, text, makeImg) {
+  const choices = ['Share as text', 'Share as image', 'Copy text'];
+  const pick = prompt(title + '\n\n1 = Share as text\n2 = Share as image\n3 = Copy text\n\nEnter 1, 2 or 3', '1');
+  if (pick === '2' && makeImg) {
+    makeImg().then(url => {
+      if (navigator.share && navigator.canShare) {
+        fetch(url).then(r => r.blob()).then(blob => {
+          const file = new File([blob], 'report.jpg', {type: 'image/jpeg'});
+          if (navigator.canShare({files: [file]})) navigator.share({title, files: [file]}).catch(() => openImg(url));
+          else openImg(url);
+        }).catch(() => openImg(url));
+      } else openImg(url);
+    });
+  } else if (pick === '3' || !navigator.share) {
+    if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => alert('Copied.')); else alert(text);
+  } else {
+    navigator.share({title, text}).catch(() => { if (navigator.clipboard) navigator.clipboard.writeText(text); });
+  }
+}
+function openImg(url) {
+  const v = $('#viewer'); v.style.display = 'flex'; v.innerHTML = `<img src="${url}" style="max-width:100%;max-height:80vh"><button class="btn" onclick="closeViewer()">Close</button>`;
+}
+function drawTripBudgetImg(t, st) {
+  return new Promise(res => {
+    const W = 720, H = 200 + st.budRows.filter(r => !r.sub).length * 48 + st.rows.length * 36 + 80;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = Math.min(H, 1600);
+    const g = cv.getContext('2d');
+    g.fillStyle = '#0f766e'; g.fillRect(0, 0, W, 120);
+    g.fillStyle = '#fff'; g.font = 'bold 22px system-ui,sans-serif'; g.fillText(t.Name, 24, 42);
+    g.font = '15px system-ui,sans-serif'; g.fillText('Planned budget', 24, 68);
+    g.font = 'bold 28px system-ui,sans-serif'; g.fillText(fmt(st.budget), 24, 104);
+    let y = 150;
+    g.fillStyle = '#16302b'; g.font = 'bold 15px system-ui,sans-serif'; g.fillText('Categories', 24, y); y += 28;
+    st.budRows.filter(r => !r.sub).forEach(r => {
+      g.font = '15px system-ui,sans-serif'; g.fillText(r.b.Item, 24, y);
+      g.fillText(fmt(r.plan), W - 24 - g.measureText(fmt(r.plan)).width, y); y += 26;
+    });
+    y += 12; g.font = 'bold 15px system-ui,sans-serif'; g.fillText('Member shares', 24, y); y += 28;
+    const per = st.budget / (st.ms.length || 1);
+    st.rows.forEach(r => {
+      g.font = '15px system-ui,sans-serif'; g.fillText(r.m.Name, 24, y);
+      const v = fmt(Math.round(r.bs || r.base || per));
+      g.fillText(v, W - 24 - g.measureText(v).width, y); y += 26;
+    });
+    res(cv.toDataURL('image/jpeg', 0.9));
+  });
+}
+function drawTripActualsImg(t, st, S) {
+  return new Promise(res => {
+    const W = 720, H = 220 + S.rows.length * 56 + 60;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = Math.min(H, 1600);
+    const g = cv.getContext('2d');
+    g.fillStyle = '#5b21b6'; g.fillRect(0, 0, W, 130);
+    g.fillStyle = '#fff'; g.font = 'bold 22px system-ui,sans-serif'; g.fillText(t.Name, 24, 40);
+    g.font = '14px system-ui,sans-serif'; g.fillText('Actuals & collections', 24, 64);
+    g.font = '15px system-ui,sans-serif';
+    g.fillText('Budget ' + fmt(st.budget) + '   Spent ' + fmt(st.spentColl), 24, 96);
+    g.fillText('Collected ' + fmt(st.collected) + '   Remain ' + fmt(st.toCollect), 24, 118);
+    let y = 160;
+    g.fillStyle = '#16302b';
+    S.rows.forEach(r => {
+      const d = Math.round(r.diff), label = d > 0 ? 'Refund ' + fmt(d) : d < 0 ? 'Collect ' + fmt(-d) : 'Settled';
+      g.font = 'bold 16px system-ui,sans-serif'; g.fillText(r.m.Name, 24, y);
+      g.fillStyle = d > 0 ? '#16a34a' : d < 0 ? '#dc2626' : '#64748b';
+      g.fillText(label, W - 24 - g.measureText(label).width, y);
+      g.fillStyle = '#16302b'; g.font = '13px system-ui,sans-serif';
+      g.fillText('Cost ' + fmt(Math.round(r.cost)) + ' · Collected ' + fmt(Math.round(r.collected)), 24, y + 20);
+      y += 52;
+    });
+    res(cv.toDataURL('image/jpeg', 0.9));
+  });
+}
 function fundSplit(t, st) {                                // where the trip money is sitting: bank accounts or cash in hand
   const bank = sum(lkrAccs(), a => tripNetAcct(a)), total = st.collBal + st.donBal;
   const cp = st.pays.filter(p => p.Kind === 'Collection');
@@ -1750,32 +1861,83 @@ function tripSettleCard(t, st, S) {
 let sumOpen = null;
 function sumShow(id) { sumOpen = sumOpen === id ? null : id; render(); }
 function tripSummary(t, st) {
-  const S = tripSettle(t, st), R = Math.round, F = fundSplit(t, st), expected = st.collected + st.toCollect;
-  const repay = R(sum(S.rows.filter(r => R(r.diff) > 0), r => r.diff)), owes = R(sum(S.rows.filter(r => R(r.diff) < 0), r => -r.diff));
-  const tile = (l, v, cls, to) => `<div onclick="goTrip('${to}')"><span>${l} ›</span><b class="${cls || ''}">${v}</b></div>`;
-  const left = st.budget > 0 ? st.budget - st.spentColl : st.collBal;
-  // budget and expenses, like the app's Home tab
-  const spendOf = r => { const names = [r.b.Item].concat(st.budRows.filter(k => r.kids.includes(k.b.ID)).map(k => k.b.Item));
-    return st.paidExp.filter(e => e.Source !== 'Donation' && names.indexOf(e.BudgetItem) >= 0).sort((a, b) => String(b.Date) < String(a.Date) ? -1 : String(b.Date) > String(a.Date) ? 1 : 0); };
-  const lines = l => `<div style="margin:2px 0 6px;padding:2px 0 2px 10px;border-left:3px solid var(--line)" onclick="event.stopPropagation()">${l.length ? l.map(e => `<div class="row" style="padding:3px 0;font-size:13px" onclick="editTripExp('${e.ID}')"><span style="min-width:0"><span class="mute">${esc(String(e.Date).slice(5, 10))}</span> ${esc(e.Item)} <span class="mute" style="font-size:11.5px">· ${e.PaidBy ? esc(e.PaidBy) : 'fund'}</span></span><b>${fmt(e.Amount)}</b></div>`).join('') : '<div class="mute" style="font-size:12.5px">Nothing spent yet</div>'}</div>`;
-  const row = (r, sub) => { const pc = r.plan > 0 ? r.spent / r.plan * 100 : 0, open = sumOpen === r.b.ID;
-    return `<div style="padding:${sub ? '5px 0 5px 14px' : '7px 0'};${sub ? '' : 'border-top:1px solid var(--line)'}" onclick="sumShow('${r.b.ID}')"><div class="row" style="${sub ? 'font-size:13.5px' : ''}"><span>${open ? '▾' : (sub ? '↳' : '▸')} ${sub ? esc(r.b.Item) : '<b>' + esc(r.b.Item) + '</b>'}</span><span><b>${fmt(r.spent)}</b> <span class="mute" style="font-size:12px">/ ${fmt(r.plan)}</span></span></div>
-      ${progress(r.spent, r.plan, 'thin', true)}<div class="row mute" style="font-size:11.5px;margin-top:2px"><span>${r.plan > 0 ? Math.round(pc) + '% used' : ''}</span><span style="color:${spendColor(pc)};font-weight:600">${r.left < -0.5 ? 'over ' + fmt(-r.left) : 'left ' + fmt(r.left)}</span></div>${open ? lines(spendOf(r)) : ''}</div>`; };
-  const rowsHtml = []; st.budRows.filter(r => !r.sub).forEach(r => { rowsHtml.push(row(r, false)); st.budRows.filter(k => r.kids.includes(k.b.ID)).forEach(k => rowsHtml.push(row(k, true))); });
-  const others = st.paidExp.filter(e => e.Source !== 'Donation' && !st.budRows.some(r => r.b.Item === e.BudgetItem));
-  if (others.length) rowsHtml.push(`<div style="padding:7px 0;border-top:1px solid var(--line)" onclick="sumShow('_other')"><div class="row"><span>${sumOpen === '_other' ? '▾' : '▸'} <b>Other (no budget)</b></span><b>${fmt(sum(others, e => e.Amount))}</b></div>${sumOpen === '_other' ? lines(others.slice().sort((a, b) => String(b.Date) < String(a.Date) ? -1 : 1)) : ''}</div>`);
-  return `<div class="hero"><div class="hsm">${st.budget > 0 ? 'Left to spend' : 'Trip fund left'}</div><div class="big ${left < 0 ? 'warn' : ''}">${fmt(left)}</div>
-    <div class="hchips"><span class="hchip">Budget ${short(st.budget)}</span><span class="hchip">Spent ${short(st.spentColl)}</span><span class="hchip">Collected ${short(st.collected)}</span></div></div>
-  <div class="card"><div class="tk">${tile('Total budget', st.budget > 0 ? fmt(st.budget) : '–', '', 'bud')}${tile('Collected', fmt(st.collected), 'inc', 'mem')}${tile('Still to collect', fmt(st.toCollect), st.toCollect > 0.5 ? 'warn' : '', 'mem')}
-      ${tile('Total spent', fmt(st.spentColl), 'exp', 'exp')}${tile('Remain to spend', st.budget > 0 ? fmt(st.stillToPay) : '–', '', 'bud')}${tile('Donations', fmt(st.cashDon), '', 'mem')}
-      ${tile('To repay members', fmt(repay), repay > 0 ? 'inc' : '', 'mem')}${tile('Members owe', fmt(owes), owes > 0 ? 'warn' : '', 'mem')}</div>
-    <div class="row mute" style="font-size:12.5px;margin-top:10px"><span>Collected: bank ${fmt(F.colBank)}</span><span>by hand ${fmt(F.colHand)}</span></div>
-    <div class="row mute" style="font-size:12.5px;margin-top:2px"><span>Trip money now: bank ${fmt(R(F.bank))}</span><span>cash in hand ${fmt(R(F.hand))}</span></div>
-    ${st.collBal < -0.5 ? `<div class="warn" style="font-size:13px;margin-top:8px">Spent ${fmt(-st.collBal)} more than the members have paid in.</div>` : ''}</div>
-  ${S.rows.length ? `<h2>Members</h2>${memberList(S.rows, () => "goTrip('mem')")}` : ''}
-  ${rowsHtml.length ? `<h2>Budget &amp; expenses</h2><div class="card tight" style="padding:2px 12px">${rowsHtml.join('')}</div>` : ''}
-  ${st.booking > 0 || st.agreed > 0 ? `<div class="card tight">${st.booking > 0 ? `<div class="row" onclick="goTrip('exp')"><span class="mute">Booking fees paid ›</span><b>${fmt(st.booking)}</b></div>` : ''}${st.agreed > 0 ? `<div class="row" style="margin-top:4px" onclick="goTrip('itm')"><span class="mute">Accessories agreed, not bought yet ›</span><b>${fmt(st.agreed)}</b></div>` : ''}</div>` : ''}
-  <div class="mute" style="font-size:12px;margin-top:8px">Tap + to add an expense, payment, member and more. Donations are a separate fund and never part of the members' cost.</div>`;
+  const S = tripSettle(t, st), R = Math.round, F = fundSplit(t, st);
+  const nMem = st.ms.length || 1;
+  const perHead = st.budget > 0 ? st.budget / nMem : (+t.PerHead || 0);
+  const pctSpent = st.budget > 0 ? Math.min(100, st.spentColl / st.budget * 100) : 0;
+  const leftBud = st.budget - st.spentColl;
+
+  // ---- Section 1: Planned budget ----
+  const budMains = st.budRows.filter(r => !r.sub);
+  const budLines = budMains.map(r => {
+    const kids = st.budRows.filter(k => r.kids.includes(k.b.ID));
+    return `<div style="padding:8px 0;border-top:1px solid var(--line)">
+      <div class="row"><b>${esc(r.b.Item)}</b><b>${fmt(r.plan)}</b></div>
+      <div class="mute" style="font-size:12px">${r.n} share unit${r.n === 1 ? '' : 's'} · ${fmt(r.plan / (r.n || 1))} each</div>
+      ${kids.map(k => `<div class="row" style="padding:3px 0 3px 12px;font-size:13.5px"><span class="mute">↳ ${esc(k.b.Item)}</span><span>${fmt(k.plan)}</span></div>`).join('')}
+    </div>`;
+  }).join('');
+  const memBudRows = st.rows.map(r => {
+    const share = R(r.bs || r.base || perHead);
+    return `<div class="row" style="padding:6px 0;border-top:1px solid var(--line)"><span>${esc(r.m.Name)}${r.auto ? ' <span class="mute" style="font-size:11px">(auto)</span>' : ''}</span><b>${fmt(share)}</b></div>`;
+  }).join('');
+
+  // ---- Section 2: Actuals ----
+  const memActual = S.rows.map(r => {
+    const d = R(r.diff), col = d > 0 ? '#16a34a' : d < 0 ? '#dc2626' : '#64748b';
+    const held = sum(st.pays.filter(p => p.Kind === 'Collection' && (p.ToMember === r.m.Name || (!p.ToMember && p.Member === r.m.Name && payVal(p.Account) === 'hand'))), p => +p.Amount || 0)
+      - sum(st.pays.filter(p => p.Kind === 'Refund' && p.Member === r.m.Name), p => +p.Amount || 0);
+    const netLabel = d > 0 ? 'Refund ' + fmt(d) : d < 0 ? 'Collect ' + fmt(-d) : 'Settled';
+    return `<div class="card tight" style="padding:10px 12px;margin-bottom:8px;border-left:5px solid ${col}" onclick="goTrip('mem')">
+      <div class="row"><b style="font-size:16px">${esc(r.m.Name)}</b><span style="font-size:18px;font-weight:700;color:${col}">${netLabel}</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+        ${pill('Cost', fmt(R(r.cost)), '#c2410c', 'rgba(234,88,12,.12)')}
+        ${pill('Collected', fmt(R(r.collected)), '#0f766e', 'rgba(13,148,136,.12)')}
+        ${r.paidOut > 0 ? pill('Paid out', fmt(R(r.paidOut)), '#2563eb', 'rgba(37,99,235,.12)') : ''}
+        ${held > 0.5 ? pill('Holds cash', fmt(R(held)), '#7c3aed', 'rgba(124,58,237,.12)') : ''}
+      </div>
+      <div class="mute" style="font-size:12px;margin-top:6px">Still to collect: <b>${fmt(Math.max(0, -d))}</b> · To refund: <b>${fmt(Math.max(0, d))}</b></div>
+    </div>`;
+  }).join('');
+
+  return `
+  <!-- ===== 1. PLANNED BUDGET ===== -->
+  <div class="hero" style="background:linear-gradient(135deg,#0f766e,#0d9488)">
+    <div class="hsm">Total planned budget</div>
+    <div class="big">${st.budget > 0 ? fmt(st.budget) : '—'}</div>
+    <div class="hchips">
+      <span class="hchip">${nMem} member${nMem === 1 ? '' : 's'}</span>
+      <span class="hchip">≈ ${fmt(perHead)} each</span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row" style="margin-bottom:6px"><b>Budget by category</b><button class="btn ghost sm" onclick="shareTripBudget('${t.ID}')">Share</button></div>
+    ${budLines || '<div class="mute">No budget items yet. Add them in the Budgets tab.</div>'}
+    ${st.rows.length ? `<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:8px"><div class="mute" style="font-size:12px;margin-bottom:4px">Each member's planned share</div>${memBudRows}</div>` : ''}
+  </div>
+
+  <!-- ===== 2. ACTUALS & COLLECTIONS ===== -->
+  <h2 style="margin-top:18px">Actuals & collections</h2>
+  <div class="hero" style="background:linear-gradient(135deg,#5b21b6,#7c3aed)">
+    <div class="row" style="align-items:flex-start">
+      <div style="flex:1"><div class="hsm">Budget</div><div class="big" style="font-size:22px">${fmt(st.budget)}</div></div>
+      <div style="flex:1;text-align:right"><div class="hsm">Spent so far</div><div class="big" style="font-size:22px">${fmt(st.spentColl)}</div></div>
+    </div>
+    ${st.budget > 0 ? `<div style="margin-top:8px">${progress(st.spentColl, st.budget)}<div class="mute" style="font-size:12px;margin-top:4px;color:rgba(255,255,255,.85)">${Math.round(pctSpent)}% used · ${leftBud >= 0 ? 'Left ' + fmt(leftBud) : 'Over by ' + fmt(-leftBud)}</div></div>` : ''}
+    <div class="hchips" style="margin-top:10px">
+      <span class="hchip">Collected ${short(st.collected)}</span>
+      <span class="hchip">Remain ${short(st.toCollect)}</span>
+      <span class="hchip">Donation fund ${short(st.donBal)}</span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row" style="margin-bottom:8px"><b>Member balances</b><button class="btn ghost sm" onclick="shareTripActuals('${t.ID}')">Share</button></div>
+    ${memActual || '<div class="mute">Add members first.</div>'}
+    <div class="row mute" style="font-size:12.5px;margin-top:8px"><span>Bank ${fmt(R(F.bank))}</span><span>Cash in hand ${fmt(R(F.hand))}</span></div>
+    ${st.collBal < -0.5 ? `<div class="warn" style="font-size:13px;margin-top:8px">Spent ${fmt(-st.collBal)} more than members have paid in.</div>` : ''}
+  </div>
+  ${st.booking > 0 || st.agreed > 0 ? `<div class="card tight">${st.booking > 0 ? `<div class="row" onclick="goTrip('exp')"><span class="mute">Booking fees paid ›</span><b>${fmt(st.booking)}</b></div>` : ''}${st.agreed > 0 ? `<div class="row" style="margin-top:4px" onclick="goTrip('itm')"><span class="mute">Accessories agreed ›</span><b>${fmt(st.agreed)}</b></div>` : ''}</div>` : ''}
+  <div class="mute" style="font-size:12px;margin-top:8px">Tap + to add expense, payment, member or budget. Donations stay in a separate fund.</div>`;
 }
 
 const tripDonations = st => st.pays.filter(p => p.Kind === 'Donation').map(p => ({id: p.ID, sheet: 'TripPay', date: p.Date, from: p.Member, what: 'cash' + (p.Note ? ' · ' + p.Note : ''), amt: +p.Amount || 0, item: false}))
@@ -1911,7 +2073,7 @@ function editPlanItem(id, planId) {
   const v = it0 ? Object.assign({}, it0, {ParentSel: it0.Parent && mains.indexOf(it0.Parent) >= 0 ? it0.Parent : MAIN}) : {TripID: tripId, PlanID: pid, Category: TRIP_CATS[0], ParentSel: MAIN};
   const fields = [{k:'Item', l:'Item (e.g. Accommodation, Bites, Bottles)', req:true}];
   if (!hasKids && mains.length) fields.push({k:'ParentSel', l:'Under (pick an item to make this a sub item)', t:'select', o:[MAIN].concat(mains)});
-  fields.push({k:'Category', l:'Category', t:'select', o:tripCats()}, {k:'NewCat', l:'Or create a new category'}, {k:'Rate', l:'Rate (LKR per unit)', t:'number'}, {k:'Qty', l:'Quantity (e.g. 3 nights, 6 people)', t:'number'},
+  fields.push({k:'Category', l:'Category', t:'select', o:tripCats()}, {k:'NewCat', l:'Or create a new category'}, {k:'DelCat', l:'Or delete a custom category', t:'select', o:[''].concat(customTripCats())}, {k:'Rate', l:'Rate (LKR per unit)', t:'number'}, {k:'Qty', l:'Quantity (e.g. 3 nights, 6 people)', t:'number'},
     {k:'Amount', l:'Amount (LKR). Filled from rate × quantity when both are entered; a main item with sub items can stay 0', t:'number'}, {k:'Note', l:'Note'});
   openForm(id ? 'Edit item' : 'New item', 'TripPlanItems', fields, v, {noDelete: hasKids,
     validate: o => { if (+o.Rate > 0 && +o.Qty > 0) o.Amount = Math.round(o.Rate * o.Qty * 100) / 100; return all.some(x => x.Item.toLowerCase() === String(o.Item).toLowerCase() && x.ID !== o.ID) ? 'This option already has an item named “' + o.Item + '”.' : ''; },
@@ -2018,11 +2180,51 @@ function editTripPay(id, member, kind, amount) {
   const t = trips().find(x => x.ID === tripId), names = D.TripMembers.filter(m => m.TripID === tripId && m.Role !== 'Donor').map(m => m.Name);
   if (!names.length) { alert('Add the members first.'); return; }
   if (id && (D.TripPay.find(x => x.ID === id) || {}).Kind === 'Donation') { editDonation(id, 'TripPay'); return; }
-  const v = id ? Object.assign({}, D.TripPay.find(x => x.ID === id), {Account: payLab(D.TripPay.find(x => x.ID === id).Account)}) : {TripID: tripId, Member: member || names[0], Date: today(), Account: payLab(t.Account), Kind: kind || 'Collection', Amount: amount ? Math.round(amount) : ''};
-  openForm(id ? 'Edit payment' : 'Payment received', 'TripPay', [
-    {k:'Member', l:'From', t:'select', o:names}, {k:'Amount', l:'Amount (LKR)', t:'calc', req:true}, {k:'Date', l:'Date', t:'date'},
-    {k:'Account', l:'Received into (bank account, or cash in hand)', t:'select', o:payOpts()}, {k:'Kind', l:'Type', t:'select', o:['Collection', 'Refund']}, {k:'Note', l:'Note'}
-  ], v, {submit: o => { o.Account = payVal(o.Account); call('save', 'TripPay', o); }});
+  const ORG = '(Organizer / trip fund)';
+  const toOpts = [ORG].concat(names);
+  const existing = id ? D.TripPay.find(x => x.ID === id) : null;
+  const v = existing
+    ? Object.assign({}, existing, {Account: payLab(existing.Account), ToMember: existing.ToMember || ORG, LinkTx: existing.TxID ? 'Yes' : 'No', TxCat: ''})
+    : {TripID: tripId, Member: member || names[0], ToMember: ORG, Date: today(), Account: payLab(t.Account), Kind: kind || 'Collection', Amount: amount ? Math.round(amount) : '', LinkTx: 'No', TxCat: ''};
+  const catOpts = [''].concat(D.Categories.filter(c => c.Type === 'Expense' || c.Type === 'Income').map(c => c.Name));
+  openForm(id ? 'Edit payment' : 'Payment / transfer', 'TripPay', [
+    {k:'Member', l:'From member', t:'select', o:names},
+    {k:'ToMember', l:'To (who holds / receives the money)', t:'select', o:toOpts},
+    {k:'Amount', l:'Amount (LKR)', t:'calc', req:true},
+    {k:'Date', l:'Date', t:'date'},
+    {k:'Account', l:'Account (bank / cash in hand). Used when money goes to or from the organizer', t:'select', o:payOpts()},
+    {k:'Kind', l:'Type', t:'select', o:['Collection', 'Refund']},
+    {k:'Note', l:'Note'},
+    {k:'LinkTx', l:'Also create a personal transaction on my account? (when I am the collector)', t:'select', o:['No', 'Yes']},
+    {k:'TxCat', l:'Personal budget category (for the linked transaction)', t:'select', o:catOpts}
+  ], v, {
+    submit: o => {
+      o.Account = payVal(o.Account);
+      const toMem = (o.ToMember === ORG) ? '' : o.ToMember;
+      o.ToMember = toMem;
+      // create / update linked personal transaction when organizer is involved
+      if (o.LinkTx === 'Yes' && o.TxCat && o.Account && o.Account !== 'hand') {
+        const isColl = o.Kind === 'Collection';
+        const tx = {
+          ID: existing && existing.TxID ? existing.TxID : rid(),
+          Date: o.Date,
+          Type: isColl ? 'Income' : 'Expense',
+          Category: o.TxCat,
+          Account: o.Account,
+          Amount: +o.Amount || 0,
+          Note: (isColl ? 'Trip collection' : 'Trip refund') + ' · ' + (t.Name || '') + (o.Note ? ' · ' + o.Note : ''),
+          Rate: '', ToAmount: '', Photo: '', ToAccount: ''
+        };
+        call('save', 'Transactions', tx);
+        o.TxID = tx.ID;
+      } else if (existing && existing.TxID && o.LinkTx !== 'Yes') {
+        // user turned off the link: leave the old tx, just clear the pointer
+        o.TxID = '';
+      }
+      delete o.LinkTx; delete o.TxCat;
+      call('save', 'TripPay', o);
+    }
+  });
 }
 const SRC_C = 'Member collection (main fund)', SRC_D = 'Donation fund', PB0 = 'The trip fund (not paid by a member)';
 const attNames = () => D.TripMembers.filter(m => m.TripID === tripId && m.Role !== 'Donor').map(m => m.Name);
@@ -2045,7 +2247,9 @@ function editBud(id, parent) {
   const parOfO = o => o.ParentSel && o.ParentSel !== MAIN ? all.find(x => x.Item === o.ParentSel && !x.Parent) : null;
   const fields = [{k:'Item', l:'Budget name (e.g. Food, or Bites under Food)', req:true}];
   if (!hasKids && mains.length) fields.push({k:'ParentSel', l:'Under (pick a budget to make this a sub budget)', t:'select', o:[MAIN].concat(mains)});
+  const delOpts = [''].concat(customTripCats());
   fields.push({k:'Category', l:'Category', t:'select', o:tripCats()}, {k:'NewCat', l:'Or create a new category (e.g. Gifts)'},
+    {k:'DelCat', l:'Or delete a custom category (built-in ones cannot be removed)', t:'select', o:delOpts},
     {k:'Rate', l:'Rate (LKR per unit). Rate × quantity = amount', t:'number'}, {k:'Qty', l:'Quantity (e.g. 3 nights, 6 people)', t:'number'},
     {k:'Amount', l:'Planned amount (LKR). Filled from rate × quantity when both are entered. For a main budget with sub budgets this is the total; leave 0 to use the sum of the subs', t:'number'},
     {k:'PerPerson', l:'Or the amount per person (LKR), e.g. 5000 for a room', t:'number'});
@@ -2077,7 +2281,7 @@ function editTripExp(id) {
               : {TripID: tripId, Date: today(), Account: accLab(t.Account), BudgetItem: NONE, Kind: 'Expense', Category: TRIP_CATS[0], Status: 'Paid', Member: '', Source: SRC_C, PaidBy: PB0};
   openForm(id ? 'Edit expense' : 'New trip expense', 'TripExp', [
     {k:'Item', l:'What was paid (e.g. Hotel booking fee)', req:true}, {k:'Kind', l:'Type', t:'select', o:['Expense', 'Booking fee']},
-    {k:'Category', l:'Category', t:'select', o:tripCats()}, {k:'NewCat', l:'Or create a new category (e.g. Gifts)'}, {k:'Amount', l:'Amount (LKR)', t:'calc', req:true}, {k:'Date', l:'Date', t:'date'},
+    {k:'Category', l:'Category', t:'select', o:tripCats()}, {k:'NewCat', l:'Or create a new category (e.g. Gifts)'}, {k:'DelCat', l:'Or delete a custom category', t:'select', o:[''].concat(customTripCats())}, {k:'Amount', l:'Amount (LKR)', t:'calc', req:true}, {k:'Date', l:'Date', t:'date'},
     {k:'Source', l:'Deduct from', t:'select', o:[SRC_C, SRC_D]},
     {k:'Account', l:'Money taken from (your account)', t:'select', o:accOpts()},
     {k:'PaidBy', l:'Who paid it', t:'select', o:[PB0].concat(names)},
