@@ -1,8 +1,426 @@
-<!-- ... existing code ... -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0c0e" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>My Money</title>
+<style>
+:root{
+  --bg:#f5f5f7;--card:#ffffff;--ink:#111315;--mute:#6b707a;--line:rgba(0,0,0,.08);
+  --accent:#0a7ea4;--accent-soft:rgba(10,126,164,.12);
+  --ok:#16a34a;--bad:#dc2626;--warn:#d97706;
+  --r:14px;--r-sm:9px;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#0b0c0e;--card:#15171b;--ink:#f2f4f7;--mute:#8e95a2;--line:rgba(255,255,255,.09);
+    --accent:#38bdf8;--accent-soft:rgba(56,189,248,.14);
+    --ok:#4ade80;--bad:#f87171;--warn:#fbbf24;
+  }
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+  font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+
+/* layout */
+.wrap{max-width:640px;margin:0 auto;padding:12px 14px calc(86px + env(safe-area-inset-bottom))}
+.hd{display:flex;align-items:center;gap:10px;padding:4px 2px 12px}
+.hd h1{font-size:21px;font-weight:700;letter-spacing:-.02em;margin:0;flex:1}
+.icon-btn{background:var(--card);border:1px solid var(--line);border-radius:999px;
+  padding:6px 11px;font-size:13px;display:inline-flex;align-items:center;gap:5px}
+.icon-btn:active{transform:scale(.97)}
+
+/* cards & rows */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:10px}
+.card.tight{padding:11px 14px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.mute{color:var(--mute)}
+.inc{color:var(--ok)}
+.exp{color:var(--bad)}
+.warn{color:var(--warn)}
+.big{font-size:28px;font-weight:700;letter-spacing:-.025em;font-variant-numeric:tabular-nums}
+.num{font-variant-numeric:tabular-nums}
+
+h2{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--mute);margin:18px 2px 8px}
+h2:first-child{margin-top:4px}
+
+/* banner */
+.banner{background:var(--accent-soft);border:1px solid transparent;border-radius:var(--r);
+  padding:10px 13px;margin-bottom:10px;font-size:13.5px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.banner.warn{background:rgba(217,119,6,.14);color:var(--ink)}
+.banner button{background:none;border:none;color:var(--accent);font-weight:600;padding:0;font-size:13px}
+
+/* month switcher */
+.mbar{display:flex;align-items:center;justify-content:space-between;padding:2px 4px 10px}
+.mbar b{font-size:15px;font-weight:600}
+.mbar button{background:var(--card);border:1px solid var(--line);border-radius:999px;
+  width:32px;height:32px;display:grid;place-items:center;font-size:15px}
+
+/* stats strip */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.stats div{cursor:pointer}
+.stats .mute{font-size:12px;display:block}
+.stats b{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+
+/* progress bar */
+.bar{height:7px;background:var(--line);border-radius:999px;overflow:hidden;margin-top:7px}
+.bar>i{display:block;height:100%;background:var(--accent);border-radius:999px;transition:width .25s}
+.bar.thin{height:4px;margin-top:5px}
+.bar>i.over{background:var(--bad)}
+.bar>i.near{background:var(--warn)}
+
+/* list items */
+.item{display:flex;align-items:center;gap:11px;padding:11px 0;border-top:1px solid var(--line);cursor:pointer}
+.item:first-child{border-top:none;padding-top:2px}
+.item:last-child{padding-bottom:2px}
+.item .main{flex:1;min-width:0}
+.item .title{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .sub{font-size:12.5px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .amt{font-weight:600;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.item .amt small{display:block;font-weight:400;font-size:11.5px;color:var(--mute)}
+
+/* pills / chips */
+.pill{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:3px 9px;
+  border-radius:999px;background:var(--bg);border:1px solid var(--line);color:var(--mute)}
+.qchips{display:flex;gap:6px;overflow-x:auto;padding:8px 0 2px;scrollbar-width:none}
+.qchips::-webkit-scrollbar{display:none}
+.qc{flex:0 0 auto;background:var(--bg);border:1px solid var(--line);color:var(--mute);
+  border-radius:999px;padding:4px 10px;font-size:12px;font-weight:500}
+.qc.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:600}
+.rcv{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;padding:4px 10px;
+  border-radius:999px;background:rgba(22,163,74,.12);color:var(--ok);cursor:pointer;font-weight:500}
+.rcv.ow{background:rgba(217,119,6,.14);color:var(--warn)}
+.rcv.trip{background:var(--accent-soft);color:var(--accent)}
+.chip{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;background:var(--bg);color:var(--mute);vertical-align:middle}
+.chip.ok{background:rgba(22,163,74,.14);color:var(--ok)}
+.chip.bad{background:rgba(220,38,38,.14);color:var(--bad)}
+.chip.warn{background:rgba(217,119,6,.16);color:var(--warn)}
+
+/* accounts & categories */
+.ac-card{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c,var(--accent));
+  border-radius:var(--r);padding:10px 14px;margin-bottom:10px}
+.ac-gh{display:flex;align-items:center;gap:10px;padding:2px 0 8px;cursor:pointer}
+.ac-gh .ac-tot{margin-left:auto;font-weight:700;font-size:15px;font-variant-numeric:tabular-nums}
+.ac-r{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);cursor:pointer}
+.ac-gh+.ac-r{border-top:1px dashed var(--line)}
+.ac-r.nest{padding-left:22px;background:rgba(127,127,127,.035);margin:0 -14px;padding-right:14px;padding-left:36px}
+.ac-ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;flex:0 0 30px;
+  font-size:15px;background:color-mix(in srgb,var(--t,var(--accent)) 14%,transparent);color:var(--t,var(--accent))}
+.ac-r.nest .ac-ic{width:24px;height:24px;font-size:12px;border-radius:7px}
+.ac-n{flex:1;min-width:0}
+.ac-n b{display:block;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ac-n small{display:block;font-size:11.5px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ac-b{text-align:right;font-variant-numeric:tabular-nums}
+.ac-b b{display:block;font-size:14px;font-weight:600}
+.ac-b small{display:block;font-size:11px;color:var(--mute)}
+.ac-act{display:flex;gap:8px;padding:8px 0 2px 40px;flex-wrap:wrap}
+.ac-act button{background:var(--bg);border:1px solid var(--line);border-radius:8px;
+  padding:5px 10px;font-size:12px;font-weight:500}
+.ac-act button.danger{color:var(--bad)}
+.drag-h{cursor:grab;color:var(--mute);font-size:16px;padding:0 2px;touch-action:none;user-select:none}
+.ac-r.dragging,.ac-card.dragging{opacity:.45}
+.ac-r.over,.ac-card.over{box-shadow:inset 0 2px 0 var(--accent)}
+
+/* trip budget rows */
+.cols{display:grid;grid-template-columns:1.6fr repeat(3,1fr);gap:6px;align-items:center;font-size:13px}
+.cols span:not(.nm){text-align:right;font-variant-numeric:tabular-nums}
+.cols.h{font-size:11px;color:var(--mute);padding-bottom:6px}
+.crow{padding:9px 0;border-top:1px solid var(--line);cursor:pointer}
+.crow:first-of-type{border-top:none}
+.exp-box{background:var(--bg);border-radius:var(--r-sm);padding:10px 12px;margin:8px 0 4px;font-size:13px}
+.exp-box .erow{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-top:1px solid var(--line)}
+.exp-box .erow:first-child{border-top:none;padding-top:0}
+
+/* bottom nav + fab */
+.nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);
+  display:grid;grid-template-columns:repeat(4,1fr);padding:6px 0 calc(6px + env(safe-area-inset-bottom));z-index:20}
+.nav button{background:none;border:none;color:var(--mute);display:flex;flex-direction:column;
+  align-items:center;gap:2px;font-size:11px;padding:4px 0}
+.nav button.on{color:var(--accent);font-weight:600}
+.nav button span{font-size:19px;line-height:1}
+.fab{position:fixed;right:18px;bottom:calc(74px + env(safe-area-inset-bottom));width:54px;height:54px;
+  border-radius:999px;background:var(--accent);color:#fff;border:none;font-size:26px;line-height:1;
+  box-shadow:0 8px 24px rgba(0,0,0,.22);z-index:25;display:grid;place-items:center}
+@media (prefers-color-scheme:dark){.fab{color:#081018}}
+.fab:active{transform:scale(.95)}
+
+/* trip sub-tabs */
+.subtabs{display:flex;gap:6px;overflow-x:auto;padding:0 2px 10px;scrollbar-width:none}
+.subtabs::-webkit-scrollbar{display:none}
+.subtabs button{background:var(--card);border:1px solid var(--line);border-radius:999px;
+  padding:6px 13px;font-size:13px;white-space:nowrap;color:var(--mute)}
+.subtabs button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+@media (prefers-color-scheme:dark){.subtabs button.on{color:#081018}}
+
+/* action buttons */
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+.actions button{background:var(--card);border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:10px;font-size:13.5px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:6px}
+.actions button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+@media (prefers-color-scheme:dark){.actions button.primary{color:#081018}}
+
+/* modal sheet */
+.backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;display:none;align-items:flex-end;justify-content:center}
+.backdrop.open{display:flex}
+.sheet{background:var(--card);width:100%;max-width:640px;max-height:88vh;overflow-y:auto;
+  border-radius:18px 18px 0 0;padding:16px 18px calc(24px + env(safe-area-inset-bottom))}
+.sheet h3{margin:0 0 14px;font-size:17px;display:flex;align-items:center;justify-content:space-between}
+.sheet h3 .x{background:none;border:none;font-size:22px;color:var(--mute);padding:0 4px}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:12px;color:var(--mute);margin-bottom:4px}
+.field input,.field select,.field textarea{width:100%;background:var(--bg);border:1px solid var(--line);
+  border-radius:var(--r-sm);padding:10px 12px;font-size:15px}
+.field textarea{min-height:64px;resize:vertical}
+.field .hint{font-size:11.5px;color:var(--mute);margin-top:4px}
+.sheet .foot{display:flex;gap:8px;margin-top:16px}
+.sheet .foot button{flex:1;padding:11px;border-radius:var(--r-sm);border:1px solid var(--line);
+  background:var(--bg);font-weight:600;font-size:14.5px}
+.sheet .foot button.save{background:var(--accent);border-color:var(--accent);color:#fff}
+@media (prefers-color-scheme:dark){.sheet .foot button.save{color:#081018}}
+.sheet .foot button.del{flex:0 0 auto;color:var(--bad);background:none;border-color:transparent}
+
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px}
+.seg button{padding:8px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--bg);font-size:13.5px;font-weight:500}
+.seg button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:600}
+
+.empty{text-align:center;padding:36px 16px;color:var(--mute);font-size:14px}
+.toast{position:fixed;left:50%;bottom:calc(80px + env(safe-area-inset-bottom));transform:translateX(-50%);
+  background:#1c1f24;color:#fff;padding:8px 14px;border-radius:999px;font-size:13px;
+  z-index:80;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.show{opacity:1}
+.lnk{color:var(--accent);font-size:13px;background:none;border:none;padding:0;font-weight:500;display:inline-block;margin-top:6px}
+@media (min-width:700px){
+  .backdrop{align-items:center}
+  .sheet{border-radius:18px;max-height:82vh}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hd" id="hd"></div>
+  <div id="view"></div>
+</div>
+
+<button class="fab" id="fab" onclick="quickAdd()" aria-label="Add">+</button>
+
+<nav class="nav" id="nav">
+  <button data-t="home" onclick="go('home')"><span>⌂</span>Home</button>
+  <button data-t="accounts" onclick="go('accounts')"><span>▦</span>Accounts</button>
+  <button data-t="trips" onclick="go('trips')"><span>✈</span>Trips</button>
+  <button data-t="more" onclick="go('more')"><span>⋯</span>More</button>
+</nav>
+
+<div class="backdrop" id="backdrop" onclick="if(event.target===this)closeSheet()">
+  <div class="sheet" id="sheet"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const APP_VER = 'v35';
+const API_URL = 'https://script.google.com/macros/s/AKfycbz-d3z82C1jH66K8r9_K1d_s-F7z9v9j_Q8n3_V_w2x4y6z8A0B2C4D6E8F0G2/exec';
+const CASH = 'Cash';
+const CACHE_KEY = 'mymoney_cache_v1';
+const QUEUE_KEY = 'mymoney_queue_v1';
+
+const emptyData = () => ({
+  Accounts:[], Transactions:[], Categories:[], Budgets:[], Loans:[], Bills:[], Goals:[],
+  Trips:[], TripMembers:[], TripBudget:[], TripExp:[], TripPay:[], Settings:[]
+});
+
+let D = emptyData();
+let queue = [];
+let tab = 'home', sub = 'summary', tripId = null, tripTab = 'sum';
+let month = thisMonth(), homeAcct = '', homeCat = '', homeSub = '';
+let catType = 'Expense', budOpen = null, budMem = null, reorder = false, sheetCtx = null;
+let syncing = false, lastSync = 0;
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const qs = s => String(s ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+const uid8 = () => Math.random().toString(36).slice(2, 10);
+const today = () => new Date().toISOString().slice(0, 10);
+const thisMonth = () => today().slice(0, 7);
+const sum = (arr, fn) => arr.reduce((a, b) => a + (+fn(b) || 0), 0);
+const n0 = x => Math.round(+x || 0).toLocaleString('en-US');
+const fmt = x => { const v = +x || 0, s = v < 0 ? '−' : ''; return s + 'LKR ' + Math.round(Math.abs(v)).toLocaleString('en-US'); };
+const short = x => {
+  const v = +x || 0, a = Math.abs(v), s = v < 0 ? '−' : '';
+  if (a >= 1e6) return s + (a / 1e6).toFixed(a % 1e6 >= 5e4 ? 1 : 0) + 'M';
+  if (a >= 1e3) return s + Math.round(a / 1e3) + 'k';
+  return s + Math.round(a);
+};
+const parseD = s => { if (!s) return null; const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(s); };
+const shortDate = d => d ? d.toLocaleDateString('en-GB', {day:'numeric', month:'short'}) : '';
+const daysTo = d => { const t0 = new Date(); t0.setHours(0,0,0,0); return Math.round((d - t0) / 864e5); };
+const monthLabel = ym => { const [y, m] = ym.split('-'); return new Date(+y, +m - 1, 1).toLocaleDateString('en-GB', {month:'long', year:'numeric'}); };
+const shiftMonth = (ym, d) => { const [y, m] = ym.split('-'); const dt = new Date(+y, +m - 1 + d, 1); return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0'); };
+const prevMonth = ym => shiftMonth(ym, -1);
+
+function toast(msg) {
+  const el = $('#toast'); el.textContent = msg; el.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+function loadCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (raw) { const p = JSON.parse(raw); D = Object.assign(emptyData(), p.data || p); if (p.at) lastSync = p.at; }
+  } catch (e) {}
+  try { queue = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch (e) { queue = []; }
+}
+function saveCache() {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({at: lastSync, data: D})); } catch (e) {}
+  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(queue)); } catch (e) {}
+}
+
+async function api(payload) {
+  if (!API_URL || API_URL.includes('PASTE_YOUR')) throw new Error('Set API_URL first');
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: {'Content-Type': 'text/plain;charset=utf-8'},
+    body: JSON.stringify(payload)
+  });
+  const txt = await res.text();
+  try { return JSON.parse(txt); } catch (e) { throw new Error(txt.slice(0, 140) || 'Bad response'); }
+}
+
+function applyOp(op) {
+  const arr = D[op.sheet]; if (!Array.isArray(arr)) return;
+  if (op.action === 'remove') {
+    D[op.sheet] = arr.filter(r => String(r.ID) !== String(op.id));
+  } else if (op.action === 'save') {
+    const row = Object.assign({}, op.row);
+    if (!row.ID) row.ID = uid8();
+    const idx = arr.findIndex(r => String(r.ID) === String(row.ID));
+    if (idx >= 0) arr[idx] = Object.assign({}, arr[idx], row); else arr.push(row);
+    op.row.ID = row.ID;
+  } else if (op.action === 'reorder') {
+    const order = op.ids || [];
+    const rank = id => { const i = order.indexOf(String(id)); return i < 0 ? 9999 : i; };
+    arr.sort((a, b) => rank(a.ID) - rank(b.ID));
+  }
+}
+
+async function flushQueue() {
+  if (!queue.length || !navigator.onLine) return;
+  const rest = [];
+  for (const op of queue) {
+    try {
+      const r = await api(op);
+      if (r && r.ok === false) throw new Error(r.error || 'Failed');
+      if (r && r.id && op.row && !op.row.ID) op.row.ID = r.id;
+    } catch (e) { rest.push(op); }
+  }
+  queue = rest; saveCache();
+}
+
+async function sync(force) {
+  if (syncing) return;
+  if (!force && lastSync && Date.now() - lastSync < 15000 && !queue.length) return;
+  syncing = true; renderHeader();
+  try {
+    await flushQueue();
+    const res = await api({action: 'load'});
+    if (res && res.ok !== false && res.data) {
+      D = Object.assign(emptyData(), res.data);
+      for (const op of queue) applyOp(op);
+      lastSync = Date.now(); saveCache();
+    }
+  } catch (e) {
+    if (force) toast(e.message || 'Offline');
+  } finally { syncing = false; render(); }
+}
+
+function call(action, sheet, data) {
+  const op = action === 'remove' ? {action, sheet, id: data}
+    : action === 'reorder' ? {action, sheet, ids: data}
+    : {action, sheet, row: Object.assign({}, data)};
+  applyOp(op);
+  queue.push(op);
+  saveCache();
+  render();
+  flushQueue().then(() => { if (!queue.length) { lastSync = Date.now(); saveCache(); } renderHeader(); });
+}
+
+/* domain helpers */
+const fxRate = cur => {
+  if (!cur || cur === 'LKR') return 1;
+  const r = D.Settings.find(s => s.Key === 'FX_' + cur);
+  return r ? +r.Value || 1 : 1;
+};
+const accByName = n => D.Accounts.find(a => a.Name === n);
+const rootOf = a => {
+  const seen = new Set(); let cur = a;
+  while (cur && cur.Parent && !seen.has(cur.Name)) { seen.add(cur.Name); const p = accByName(cur.Parent); if (!p) break; cur = p; }
+  return cur;
+};
+const childrenOf = a => D.Accounts.filter(x => x.Parent === a.Name);
+const isLeaf = a => !childrenOf(a).length;
+const roots = () => D.Accounts.filter(a => !a.Parent || !accByName(a.Parent));
+const leafList = () => D.Accounts.filter(isLeaf);
+const homeList = () => { const s = leafList().filter(a => a.Type === 'Savings'); return s.length ? s : leafList(); };
+const accBalance = a => {
+  let b = +a.Opening || 0;
+  for (const t of D.Transactions) {
+    const amt = +t.Amount || 0;
+    if (t.Account === a.Name) {
+      if (t.Type === 'Income') b += amt;
+      else if (t.Type === 'Expense' || t.Type === 'Transfer') b -= amt;
+    }
+    if (t.Type === 'Transfer' && t.ToAccount === a.Name) b += amt;
+  }
+  for (const l of D.Loans) {
+    if (l.Account !== a.Name) continue;
+    const p = +l.Principal || 0;
+    if (l.Direction === 'Lent') b -= p; else if (l.Direction === 'Borrowed') b += p;
+  }
+  for (const lp of D.Loans) {
+    if (!lp.Paid || lp.Account !== a.Name) continue;
+  }
+  return b;
+};
+const subBalance = a => accBalance(a) + sum(childrenOf(a), subBalance);
+const totalLkr = a => subBalance(a) * fxRate(a.Currency);
+const defAcct = () => { const s = D.Settings.find(x => x.Key === 'DefaultAccount'); return s ? s.Value : ''; };
+const setDefAcct = name => call('save', 'Settings', {Key: 'DefaultAccount', Value: name});
+
+const isTransfer = t => t.Type === 'Transfer';
+const isIncome = t => t.Type === 'Income';
+const isExpense = t => t.Type === 'Expense';
+const isOut = t => isExpense(t) || isTransfer(t);
+const isInTag = t => isIncome(t) || (isTransfer(t) && t.Category === 'From Savings');
+const val = t => +t.Amount || 0;
+const lkr = t => val(t) * fxRate(accByName(t.Account)?.Currency);
+const inMonth = (d, ym) => String(d || '').startsWith(ym + '-');
+const catObj = name => D.Categories.find(c => c.Name === name);
+const catParent = name => { const c = catObj(name); return c && c.Parent ? c.Parent : ''; };
+const mainCatOf = name => catParent(name) || name || 'Other';
+
+/* Trip account & member collection/donation helpers */
 function tripNetAcct(name) {
-  const ids = new Set(activeTrips().map(t => t.ID)); let v = 0;
-  D.TripPay.forEach(p => { if (ids.has(p.TripID) && p.Account === name) v += (p.Kind === 'Refund' ? -1 : 1) * (+p.Amount || 0); });
-  D.TripExp.forEach(e => { if (ids.has(e.TripID) && e.Account === name && e.Status !== 'Agreed' && !e.PaidBy) v -= +e.Amount || 0; });
+  const ids = new Set(activeTrips().map(t => t.ID));
+  let v = 0;
+  D.TripPay.forEach(p => {
+    if (ids.has(p.TripID) && p.Account === name) {
+      v += (p.Kind === 'Refund' ? -1 : 1) * (+p.Amount || 0);
+    }
+  });
+  D.TripExp.forEach(e => {
+    if (ids.has(e.TripID) && e.Account === name && e.Status !== 'Agreed' && !e.PaidBy) {
+      v -= +e.Amount || 0;
+    }
+  });
   return v;
 }
 function tripHeldByMember(name) {
@@ -18,20 +436,104 @@ function tripHeldByMember(name) {
   return {coll, don, ref, total: coll + don - ref};
 }
 const tripNetAll = () => sum(D.Accounts, a => tripNetAcct(a.Name));
-const exclSet = x => new Set(String(x || '').split('|').filter(Boolean));
-<!-- ... existing code ... -->
+
+const spendColor = pct => pct > 100 ? 'var(--bad)' : pct >= 80 ? 'var(--warn)' : 'var(--ok)';
+function progress(used, cap, cls = '', showPct = false) {
+  if (!(cap > 0)) return '';
+  const pct = used / cap * 100, w = Math.min(100, Math.max(0, pct));
+  const c = pct > 100 ? 'over' : pct >= 80 ? 'near' : '';
+  return `<div class="bar ${cls}"><i class="${c}" style="width:${w}%"></i></div>` +
+    (showPct ? `<div class="mute" style="font-size:11.5px;margin-top:3px">${Math.round(pct)}% used</div>` : '');
+}
+
+function outstanding(l) {
+  const p = +l.Principal || 0, r = +l.Rate || 0, m = Math.max(0, +l.Months || 0);
+  const due = r > 0 && m > 0 ? p * (1 + r * m / 1200) : p;
+  return Math.max(0, due - (+l.Paid || 0));
+}
+
+function dueItems() {
+  const out = [];
+  for (const b of D.Bills) {
+    if (b.Active === 'No') continue;
+    const d = parseD(b.DueDate); if (!d) continue;
+    const n = daysTo(d);
+    if (n <= 7) out.push({kind:'bill', name:b.Name, amt:+b.Amount || 0, days:n, obj:b});
+  }
+  for (const l of D.Loans) {
+    const rem = outstanding(l); if (rem <= 0.005 || !l.DueDate) continue;
+    const n = daysTo(parseD(l.DueDate));
+    if (n <= 7) out.push({kind:'loan', name:l.Person || l.Name || 'Loan', amt:rem, days:n, obj:l});
+  }
+  return out.sort((a, b) => a.days - b.days);
+}
+
+/* navigation */
+function go(t, resetSub = true) {
+  tab = t; if (resetSub) sub = t === 'more' ? 'loans' : 'summary';
+  if (t !== 'trips') { tripId = null; reorder = false; }
+  render(); window.scrollTo(0, 0);
+}
+function openTrip(id) { tripId = id; tripTab = 'sum'; budOpen = null; budMem = null; reorder = false; tab = 'trips'; render(); window.scrollTo(0, 0); }
+function openTripSummary() { const act = activeTrips(); if (act.length === 1) openTrip(act[0].ID); else go('trips'); }
+function openStmt(id) { tab = 'accounts'; sub = id || ''; render(); window.scrollTo(0, 0); }
+
+/* header & nav */
+function renderHeader() {
+  const titles = {home:'My Money', accounts:'Accounts', trips: tripId ? (trips().find(t => t.ID === tripId)?.Name || 'Trip') : 'Trips', more:'More'};
+  const back = tab === 'trips' && tripId;
+  const qBadge = queue.length ? `<span class="chip warn">${queue.length} queued</span>` : '';
+  const syncLbl = syncing ? '↻ Syncing…' : (navigator.onLine ? '↻ Sync' : 'Offline');
+  $('#hd').innerHTML = `
+    ${back ? `<button class="icon-btn" onclick="tripId=null;reorder=false;render()">‹ Trips</button>` : ''}
+    <h1>${esc(titles[tab])}</h1>
+    ${qBadge}
+    <button class="icon-btn" onclick="sync(true)">${syncLbl}</button>`;
+  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.dataset.t === tab));
+}
+
+function render() {
+  renderHeader();
+  const v = $('#view');
+  if (tab === 'home') v.innerHTML = homeScreen();
+  else if (tab === 'accounts') v.innerHTML = accountsScreen();
+  else if (tab === 'trips') v.innerHTML = tripsScreen();
+  else v.innerHTML = moreScreen();
+  wireSwipe();
+  wireReorder();
+}
+
+/* ---------------- HOME ---------------- */
+function bannerLine() {
+  const due = dueItems();
+  if (due.length) {
+    const x = due[0], when = x.days < 0 ? `${-x.days}d overdue` : x.days === 0 ? 'due today' : `due in ${x.days}d`;
+    return {text: `${x.name} (${fmt(x.amt)}) · ${when}`, warn: true, action: "go('more');sub='bills';render()"};
+  }
+  const left = sum(D.Budgets.filter(b => b.Month === month), b => +b.Amount || 0)
+    - sum(D.Transactions.filter(t => inMonth(t.Date, month) && isExpense(t)), lkr);
+  if (left < 0) return {text: `Over monthly budget by ${fmt(-left)}`, warn: true, action: "go('more');sub='budgets';render()"};
+  if (!D.Accounts.length) return {text: 'Add an account to get started', warn: false, action: "editAccount()"};
+  return null;
+}
+
+function homeScreen() {
+  const a = homeAcct ? accByName(homeAcct) : null;
+  const names = a ? new Set([a.Name].concat(childrenOf(a).map(x => x.Name))) : null;
+  const tx = D.Transactions.filter(t => inMonth(t.Date, month) && (!names || names.has(t.Account)));
   const inc = sum(tx.filter(isInTag), val);
   const exp = sum(tx.filter(isOut), lkr);
   const tripHeld = a ? tripNetAcct(a.Name) : tripNetAll();
   const worth = (a ? totalLkr(a) : sum(roots(), totalLkr)) - tripHeld;
   const num = x => Math.abs(+x) >= 1e6 ? short(x) : n0(x);
-<!-- ... existing code ... -->
+
   const open = D.Loans.filter(l => outstanding(l) > 0.005 && (!names || names.has(l.Account)));
   const rec = sum(open.filter(l => l.Direction === 'Lent'), outstanding), owe = sum(open.filter(l => l.Direction === 'Borrowed'), outstanding);
   const goLoans = "tab='more';sub='loans';render();window.scrollTo(0,0)";
   const opts = [''].concat(homeList().map(x => x.Name)), at = Math.max(0, opts.indexOf(homeAcct));
   const tripAct = activeTrips();
   const tripShow = a ? tripAct.filter(x => Math.abs(tripNetAcct(x.Name)) > 0.5) : tripAct;
+
   return `${banner(bannerLine(), dueItems().length > 0)}${monthBar()}
   <div class="card tight swipe-acct">
     <div class="row"><span class="mute">Left this month</span><span class="pill" onclick="pickAcct()">${a && a.Name === defAcct() ? '★ ' : ''}${esc(a ? a.Name : 'All accounts')} ▾</span></div>
@@ -48,7 +550,161 @@ const exclSet = x => new Set(String(x || '').split('|').filter(Boolean));
     ${tripShow.length ? `<div style="margin-top:8px"><span class="rcv trip" onclick="openTripSummary()">✈ Trip balance <b>${n0(a ? tripNetAcct(a.Name) : sum(tripShow, x => tripStats(x).balance))}</b></span><span class="mute" style="font-size:12px;margin-left:8px">kept separate from your balance</span></div>` : ''}
   </div>
   <h2>Expenses</h2>
-<!-- ... existing code ... -->
+  ${expCard(tx, names)}`;
+}
+
+function pickQuick(n) { homeAcct = n; homeCat = ''; homeSub = ''; render(); }
+function pickAcct() {
+  const list = [{label:'All accounts', val:''}].concat(homeList().map(a => ({
+    label:(a.Name === defAcct() ? '★ ' : '') + a.Name + ' (' + short(subBalance(a) - tripNetAcct(a.Name)) + ')', val:a.Name
+  })));
+  openSheet('Account', list.map(o => `<div class="item" onclick="homeAcct='${qs(o.val)}';homeCat='';homeSub='';closeSheet();render()"><div class="main"><div class="title">${esc(o.label)}</div></div>${homeAcct === o.val ? '<span>✓</span>' : ''}</div>`).join(''));
+}
+
+function expCard(tx, names) {
+  const ex = tx.filter(isOut);
+  const byMain = new Map();
+  for (const t of ex) { const m = mainCatOf(t.Category); byMain.set(m, (byMain.get(m) || 0) + lkr(t)); }
+  const buds = D.Budgets.filter(b => b.Month === month && (!names || names.has(b.Account)));
+  const budByMain = new Map();
+  for (const b of buds) { const m = mainCatOf(b.Category); budByMain.set(m, (budByMain.get(m) || 0) + (+b.Amount || 0)); }
+  const cats = Array.from(new Set([...byMain.keys(), ...budByMain.keys()])).sort((a, b) => (byMain.get(b) || 0) - (byMain.get(a) || 0));
+
+  if (homeCat) {
+    const subs = new Map();
+    for (const t of ex.filter(x => mainCatOf(x.Category) === homeCat)) { const s = t.Category || homeCat; subs.set(s, (subs.get(s) || 0) + lkr(t)); }
+    const rows = Array.from(subs.entries()).sort((a, b) => b[1] - a[1]);
+    const list = ex.filter(x => mainCatOf(x.Category) === homeCat && (!homeSub || (x.Category || homeCat) === homeSub));
+    return `<div class="card tight">
+      <div class="row" style="margin-bottom:8px"><button class="lnk" style="margin:0" onclick="homeCat='';homeSub='';render()">‹ All categories</button><b>${esc(homeCat)} · ${fmt(byMain.get(homeCat) || 0)}</b></div>
+      ${rows.map(([s, v]) => `<div class="item" onclick="homeSub=homeSub==='${qs(s)}'?'':'${qs(s)}';render()"><div class="main"><div class="title">${esc(s)}${homeSub === s ? ' · filtered' : ''}</div></div><div class="amt">${fmt(v)}</div></div>`).join('')}
+      <h2>Transactions</h2>
+      ${list.length ? list.map(txRow).join('') : '<div class="empty">No transactions.</div>'}
+    </div>`;
+  }
+
+  const totBud = sum(budByMain.values()), totExp = sum(ex, lkr);
+  if (!cats.length && !tx.length) return `<div class="card"><div class="empty">Nothing recorded for ${esc(monthLabel(month))}.<br>Tap + to add an expense or income.</div></div>`;
+  return `<div class="card tight">
+    ${totBud > 0 ? `<div style="margin-bottom:10px"><div class="row"><span class="mute">Monthly budget</span><b>${fmt(totExp)} / ${fmt(totBud)}</b></div>${progress(totExp, totBud, '', true)}</div>` : ''}
+    ${cats.map(c => {
+      const sp = byMain.get(c) || 0, bd = budByMain.get(c) || 0;
+      const subTxt = bd > 0 ? `${fmt(sp)} of ${fmt(bd)} (${Math.round(sp / bd * 100)}%)` : fmt(sp);
+      return `<div class="item" onclick="homeCat='${qs(c)}';homeSub='';render()"><div class="main"><div class="title">${esc(c)}</div><div class="sub">${subTxt}</div>${bd > 0 ? progress(sp, bd, 'thin') : ''}</div><div class="amt">${short(sp)}</div></div>`;
+    }).join('')}
+    <button class="lnk" onclick="go('accounts');sub='all';render()">All transactions (${tx.length}) ›</button>
+  </div>`;
+}
+
+function txRow(t) {
+  const tr = isTransfer(t), sub2 = [t.Account, tr ? '→ ' + (t.ToAccount || '') : t.Category, t.Note].filter(Boolean).join(' · ');
+  const cls = tr ? '' : isIncome(t) ? 'inc' : 'exp', sgn = tr ? '' : isIncome(t) ? '+' : '−';
+  return `<div class="item" onclick="editTx('${t.ID}')"><div class="main"><div class="title">${esc(t.Note || t.Category || t.Type)}</div><div class="sub">${esc(sub2)}</div></div><div class="amt ${cls}">${sgn}${n0(t.Amount)}</div></div>`;
+}
+
+function monthBar() {
+  return `<div class="mbar"><button onclick="month=shiftMonth(month,-1);homeCat='';homeSub='';render()">‹</button><b>${esc(monthLabel(month))}</b><button onclick="month=shiftMonth(month,1);homeCat='';homeSub='';render()">›</button></div>`;
+}
+function banner(b, urgent) {
+  if (!b) return '';
+  return `<div class="banner ${b.warn ? 'warn' : ''}"><span>${esc(b.text)}</span>${b.action ? `<button onclick="${b.action}">${urgent ? 'View' : 'Set up'} ›</button>` : ''}</div>`;
+}
+
+/* ---------------- ACCOUNTS ---------------- */
+const BANKCOL = [['#0a7ea4','#38bdf8'],['#16a34a','#4ade80'],['#7c3aed','#a78bfa'],['#d97706','#fbbf24'],['#db2777','#f472b6'],['#0d9488','#2dd4bf']];
+const ACT_IC = {Bank:'🏦',Savings:'🐷',Cash:'💵',Card:'💳',Wallet:'👛',Investment:'📈'};
+const actColor = (a, i) => a.Color || BANKCOL[i % BANKCOL.length][0];
+const actIcon = a => a.Icon || ACT_IC[a.Type] || '💳';
+let accOpen = {};
+
+function accountsScreen() {
+  if (sub && sub !== 'summary' && sub !== 'all') return statement(sub);
+  const net = sum(roots(), totalLkr);
+  const tripAll = tripNetAll();
+  const netMine = net - tripAll;
+  const open = D.Loans.filter(l => outstanding(l) > 0.005);
+  const lent = sum(open.filter(l => l.Direction === 'Lent'), outstanding), bor = sum(open.filter(l => l.Direction === 'Borrowed'), outstanding);
+
+  return `
+  <div class="card tight">
+    <div class="row"><span class="mute">Net worth (your balance)</span><span class="pill">${esc(String(D.Accounts.length))} accounts</span></div>
+    <div class="big ${netMine < 0 ? 'warn' : ''}">${fmt(netMine)}</div>
+    ${Math.abs(tripAll) > 0.5 ? `<div class="mute" style="font-size:12px;margin-top:4px">Gross accounts ${fmt(net)} · Trip held ${fmt(tripAll)} kept separate</div>` : ''}
+    ${lent > 0.005 || bor > 0.005 ? `<div class="stats">
+      <div onclick="go('more');sub='loans';render()"><span class="mute">Lent out</span><b class="inc">${short(lent)}</b></div>
+      <div onclick="go('more');sub='loans';render()"><span class="mute">Borrowed</span><b class="exp">${short(bor)}</b></div>
+      <div onclick="sub='all';render()"><span class="mute">All activity</span><b>${D.Transactions.length} ›</b></div>
+    </div>` : `<div class="stats" style="grid-template-columns:1fr"><div onclick="sub='all';render()"><span class="mute">All activity</span><b>${D.Transactions.length} transactions ›</b></div></div>`}
+  </div>
+  <div class="subtabs">
+    <button class="${sub === 'summary' ? 'on' : ''}" onclick="sub='summary';render()">Balances</button>
+    <button class="${sub === 'all' ? 'on' : ''}" onclick="sub='all';render()">All transactions</button>
+  </div>
+  ${sub === 'all' ? allTxList() : accountTree()}`;
+}
+
+function accountTree() {
+  const rs = roots();
+  if (!rs.length) return `<div class="card"><div class="empty">No accounts yet.<br>Tap + to add a bank, wallet, or savings account.</div></div>`;
+  const row = (a, nested, col) => {
+    const ks = childrenOf(a), hasK = ks.length > 0, isOpen = !!accOpen[a.Name];
+    const rawBal = hasK ? subBalance(a) : accBalance(a);
+    const tHeld = tripNetAcct(a.Name);
+    const bal = rawBal - tHeld;
+    const fx = a.Currency && a.Currency !== 'LKR' ? ` · ${a.Currency} ${n0(bal)}` : '';
+    const subLine = [a.Type, fx.replace(/^ · /, ''), Math.abs(tHeld) > 0.5 ? `trip ${short(tHeld)}` : ''].filter(Boolean).join(' · ');
+    return `<div class="ac-r ${nested ? 'nest' : ''}" onclick="accOpen['${qs(a.Name)}']=!accOpen['${qs(a.Name)}'];render()">
+      <span class="ac-ic" style="--t:${col}">${actIcon(a)}</span>
+      <div class="ac-n"><b>${hasK ? (isOpen ? '▾ ' : '▸ ') : ''}${esc(a.Name)}</b><small>${esc(subLine)}</small></div>
+      <div class="ac-b"><b>${fmt(bal * fxRate(a.Currency))}</b><small>${isOpen ? 'hide' : 'actions'}</small></div>
+    </div>
+    ${isOpen ? `<div class="ac-act">
+      <button onclick="event.stopPropagation();openStmt('${a.ID}')">Statement</button>
+      <button onclick="event.stopPropagation();editTx(null,'Expense','${qs(a.Name)}')">− Expense</button>
+      <button onclick="event.stopPropagation();editTx(null,'Income','${qs(a.Name)}')">+ Income</button>
+      <button onclick="event.stopPropagation();editTx(null,'Transfer','${qs(a.Name)}')">⇄ Transfer</button>
+      <button onclick="event.stopPropagation();editAccount('${a.ID}')">Edit</button>
+      ${a.Name !== defAcct() ? `<button onclick="event.stopPropagation();setDefAcct('${qs(a.Name)}')">Set default</button>` : ''}
+    </div>` : ''}
+    ${hasK && isOpen ? ks.map(k => row(k, true, col)).join('') : ''}`;
+  };
+  return rs.map((r, i) => {
+    const col = actColor(r, i), ks = childrenOf(r);
+    const rawTot = subBalance(r), tTot = tripNetAcct(r.Name) + sum(ks, k => tripNetAcct(k.Name));
+    const tot = (rawTot - tTot) * fxRate(r.Currency);
+    return `<div class="ac-card" style="--c:${col};--ct:${col}">
+      <div class="ac-gh" onclick="openStmt('${r.ID}')"><span class="ac-ic" style="--t:${col}">${actIcon(r)}</span><b style="color:${col}">${esc(r.Name)}${r.Name === defAcct() ? ' ★' : ''}</b><span class="ac-tot">${fmt(tot)}</span></div>
+      ${row(r, false, col)}
+      ${!accOpen[r.Name] && ks.length ? ks.map(k => row(k, true, col)).join('') : ''}
+    </div>`;
+  }).join('');
+}
+
+function statement(id) {
+  const a = D.Accounts.find(x => x.ID === id || x.Name === id);
+  if (!a) { sub = 'summary'; return accountsScreen(); }
+  const names = new Set([a.Name].concat(childrenOf(a).map(x => x.Name)));
+  const tHeld = sum([...names], tripNetAcct);
+  const netBal = sum([...names], accBalance) - tHeld;
+  const list = D.Transactions.filter(t => names.has(t.Account) || names.has(t.ToAccount)).sort((x, y) => String(y.Date).localeCompare(String(x.Date)));
+  return `<div class="card tight">
+    <button class="lnk" style="margin:0 0 6px" onclick="sub='summary';render()">‹ Accounts</button>
+    <div class="row"><div><b style="font-size:18px">${esc(a.Name)}</b><div class="mute" style="font-size:12px">${esc(a.Type || 'Account')} · ${esc(a.Currency || 'LKR')}${Math.abs(tHeld) > 0.5 ? ` · Trip held ${fmt(tHeld)}` : ''}</div></div>
+      <div style="text-align:right"><div class="big" style="font-size:22px">${fmt(netBal * fxRate(a.Currency))}</div><button class="lnk" onclick="editAccount('${a.ID}')">Edit account</button></div>
+    </div>
+  </div>
+  <div class="card tight">${list.length ? list.map(txRow).join('') : '<div class="empty">No transactions on this account.</div>'}</div>`;
+}
+
+function allTxList() {
+  const list = D.Transactions.slice().sort((a, b) => String(b.Date).localeCompare(String(a.Date))).slice(0, 120);
+  return `<div class="card tight">${list.length ? list.map(txRow).join('') : '<div class="empty">No transactions yet.</div>'}</div>`;
+}
+
+/* ---------------- TRIPS ---------------- */
+const trips = () => D.Trips;
+const activeTrips = () => trips().filter(t => t.Status !== 'Done');
+const tripName = id => trips().find(t => t.ID === id)?.Name || 'Trip';
 const tripDates = t => { const a = parseD(t.Start), b = parseD(t.End); return a ? shortDate(a) + (b ? ' – ' + shortDate(b) : '') : ''; };
 const tripWhen = t => { const a = parseD(t.Start), b = parseD(t.End); if (!a) return ''; const n = daysTo(a); if (n > 0) return 'starts in ' + n + (n === 1 ? ' day' : ' days'); if (b && daysTo(b) >= 0) return 'on the trip now'; return b ? 'finished' : ''; };
 const accOpts = () => [CASH].concat(D.Accounts.map(a => a.Name));
@@ -60,13 +716,126 @@ const payLab = v => v ? v : HAND;
 const accVal = v => v === CASH ? '' : v;
 const accLab = v => v ? v : CASH;
 function tripsScreen() { return tripId ? tripDetail() : tripList(); }
-<!-- ... existing code ... -->
-let sumOpen = null, sumMem = null;
-function sumShow(id) { sumOpen = sumOpen === id ? null : id; render(); }
-function budgetShareInfo(st) {
-  const mains = st.budRows.filter(r => !r.sub), rows = st.rows.map(r => ({m: r.m, amt: r.bs || 0, w: +r.m.Weight > 0 ? +r.m.Weight : 1, cats: mains.map(c => ({name: c.b.Item, amt: (c.alloc.find(a => a.name === r.m.Name) || {amt: 0}).amt})).filter(x => x.amt > 0.5), notIn: mains.filter(c => ((c.alloc.find(a => a.name === r.m.Name) || {amt: 0}).amt) <= 0.5 && c.plan > 0).map(c => c.b.Item)}));
-  const total = st.budget, n = rows.length, avg = n ? total / n : 0, even = rows.length ? Math.max.apply(null, rows.map(r => r.amt)) - Math.min.apply(null, rows.map(r => r.amt)) < 1 : true;
-  return {rows, total, n, avg, even};
+
+function tripList() {
+  const act = activeTrips(), done = trips().filter(t => t.Status === 'Done');
+  const card = t => {
+    const st = tripStats(t), meta = [t.Destination, tripDates(t), tripWhen(t)].filter(Boolean).join(' · ');
+    return `<div class="card" onclick="openTrip('${t.ID}')"><div class="row"><b style="font-size:16px">${esc(t.Name)}</b><span class="chip ${t.Status === 'Done' ? '' : 'ok'}">${esc(t.Status || 'Planning')}</span></div>${meta ? `<div class="mute" style="font-size:12.5px;margin-top:2px">${esc(meta)}</div>` : ''}<div class="stats"><div><span class="mute">Budget</span><b>${short(st.budget)}</b></div><div><span class="mute">Spent</span><b class="exp">${short(st.spentColl)}</b></div><div><span class="mute">Cash/bank</span><b>${short(st.balance)}</b></div></div></div>`;
+  };
+  return `${act.length ? act.map(card).join('') : '<div class="card"><div class="empty">No active trips.<br>Tap + to plan a trip.</div></div>'}${done.length ? `<h2>Past trips</h2>${done.map(card).join('')}` : ''}`;
+}
+
+function tripStats(t) {
+  const ms = D.TripMembers.filter(m => m.TripID === t.ID && m.Role !== 'Donor');
+  const donors = D.TripMembers.filter(m => m.TripID === t.ID && m.Role === 'Donor');
+  const buds = D.TripBudget.filter(b => b.TripID === t.ID);
+  const exps = D.TripExp.filter(e => e.TripID === t.ID);
+  const pays = D.TripPay.filter(p => p.TripID === t.ID);
+
+  const excl = b => new Set(String(b.Exclude || '').split('|').filter(Boolean));
+  const membersFor = b => { const ex = excl(b); const f = ms.filter(m => !ex.has(m.Name)); return f.length ? f : ms; };
+  const weightSum = list => sum(list, m => +m.Weight > 0 ? +m.Weight : 1);
+  const shareOf = (m, list, amt) => { const w = weightSum(list); return w > 0 ? amt * ((+m.Weight > 0 ? +m.Weight : 1) / w) : 0; };
+  const kids = id => buds.filter(x => x.ParentID === id);
+  const isSub = b => !!(b.ParentID && buds.some(p => p.ID === b.ParentID));
+  const linePlan = b => { const ks = kids(b.ID); return ks.length ? sum(ks, linePlan) : (+b.Amount || 0); };
+  const lineSpent = b => { const ks = kids(b.ID); const own = sum(exps.filter(e => e.BudgetID === b.ID && e.Kind !== 'Donated'), e => +e.Amount || 0); return own + sum(ks, lineSpent); };
+
+  const budget = sum(buds.filter(b => !isSub(b)), linePlan);
+  const donated = exps.filter(e => e.Kind === 'Donated');
+  const sharedExps = exps.filter(e => e.Kind !== 'Donated' && e.Status !== 'Private');
+  const privateExps = exps.filter(e => e.Kind !== 'Donated' && e.Status === 'Private');
+  const spentColl = sum(sharedExps, e => +e.Amount || 0);
+  const paidByTrip = sum(sharedExps.filter(e => e.Status !== 'Agreed' && !e.PaidBy), e => +e.Amount || 0);
+
+  const budIds = new Set(buds.map(b => b.ID));
+  const unbud = sum(sharedExps.filter(e => !e.BudgetID || !budIds.has(e.BudgetID)), e => +e.Amount || 0);
+
+  const budRows = buds.map(b => {
+    const ks = kids(b.ID), hasK = ks.length > 0, plan = linePlan(b), spent = lineSpent(b);
+    const list = membersFor(b), w = weightSum(list);
+    const alloc = ms.map(m => ({name: m.Name, amt: shareOf(m, list, plan)}));
+    const perHead = w > 0 ? plan / w : 0;
+    const left = plan - spent;
+    const items = exps.filter(e => e.BudgetID === b.ID && e.Kind !== 'Donated');
+    return {b, sub: isSub(b), hasK, kids: ks.map(k => k.ID), plan, spent, left, alloc, perHead, items};
+  });
+
+  const memberPlan = m => sum(budRows.filter(r => !r.hasK && !r.sub), r => {
+    const list = membersFor(r.b);
+    return shareOf(m, list, r.plan);
+  });
+
+  const memberCost = m => {
+    const ex = new Set(String(t.Exclude || '').split('|').filter(Boolean));
+    if (ex.has(m.Name)) return 0;
+    let c = 0;
+    for (const e of sharedExps) {
+      const f = excl(e), pool = ms.filter(x => !f.has(x.Name)), list = pool.length ? pool : ms;
+      c += shareOf(m, list, +e.Amount || 0);
+    }
+    return c;
+  };
+
+  const memNames = new Set(ms.map(m => m.Name));
+  const coll = sum(pays.filter(p => p.Kind !== 'Donation' && p.Kind !== 'Refund'), p => +p.Amount || 0);
+  const ref = sum(pays.filter(p => p.Kind === 'Refund'), p => +p.Amount || 0);
+  const donCash = sum(pays.filter(p => p.Kind === 'Donation'), p => +p.Amount || 0);
+  const otherPaid = sum(pays.filter(p => p.Kind !== 'Donation' && !memNames.has(p.Member)), p => (p.Kind === 'Refund' ? -1 : 1) * (+p.Amount || 0));
+
+  const rows = ms.map(m => {
+    const c = sum(pays.filter(p => p.Member === m.Name && p.Kind !== 'Donation' && p.Kind !== 'Refund'), p => +p.Amount || 0);
+    const rf = sum(pays.filter(p => p.Member === m.Name && p.Kind === 'Refund'), p => +p.Amount || 0);
+    const paidOut = sum(sharedExps.filter(e => e.PaidBy === m.Name && e.Status !== 'Agreed'), e => +e.Amount || 0);
+    const paid = c - rf + paidOut;
+    const cost = memberCost(m);
+    const planShare = memberPlan(m);
+    const held = sum(pays.filter(p => p.Holder === m.Name), p => (p.Kind === 'Refund' ? -1 : 1) * (+p.Amount || 0));
+    const net = paid - cost;
+    const out = Math.max(0, planShare - c);
+    return {m, collected: c - rf, paidOut, paid, cost, planShare, held, net, out};
+  });
+
+  const toCollect = sum(rows, r => r.out);
+  const balance = coll - ref + donCash - paidByTrip + otherPaid;
+  const stillToPay = Math.max(0, budget - spentColl);
+  const shortBy = Math.max(0, stillToPay - balance - toCollect);
+  return {ms, donors, buds, exps, pays, donated, private: privateExps, budget, spentColl, paidByTrip, unbud, budRows, rows, coll, ref, donCash, otherPaid, balance, toCollect, stillToPay, shortBy};
+}
+
+function tripSettle(t, st) {
+  const rows = st.rows.slice().sort((a, b) => b.net - a.net);
+  const debtors = rows.filter(r => r.net < -0.5).map(r => ({name: r.m.Name, amt: -r.net}));
+  const creditors = rows.filter(r => r.net > 0.5).map(r => ({name: r.m.Name, amt: r.net}));
+  const transfers = [];
+  let i = 0, j = 0;
+  while (i < debtors.length && j < creditors.length) {
+    const x = Math.min(debtors[i].amt, creditors[j].amt);
+    if (x >= 1) transfers.push({from: debtors[i].name, to: creditors[j].name, amt: Math.round(x)});
+    debtors[i].amt -= x; creditors[j].amt -= x;
+    if (debtors[i].amt < 0.5) i++;
+    if (creditors[j].amt < 0.5) j++;
+  }
+  return {rows, transfers};
+}
+
+function tripDetail() {
+  const t = trips().find(x => x.ID === tripId);
+  if (!t) { tripId = null; return tripList(); }
+  const st = tripStats(t);
+  const meta = [t.Destination, tripDates(t), tripWhen(t)].filter(Boolean).join(' · ');
+  return `<div class="card tight" style="margin-bottom:8px">
+    <div class="row"><div>${meta ? `<div class="mute" style="font-size:12.5px">${esc(meta)}</div>` : ''}<div class="mute" style="font-size:12.5px">${st.ms.length} coming · cash/bank ${fmt(st.balance)}</div></div>
+      <div style="display:flex;gap:10px"><button class="lnk" style="margin:0" onclick="report('${t.ID}')">Report</button><button class="lnk" style="margin:0" onclick="editTrip('${t.ID}')">Edit</button></div></div>
+  </div>
+  <div class="subtabs">
+    <button class="${tripTab === 'sum' ? 'on' : ''}" onclick="tripTab='sum';render()">Summary</button>
+    <button class="${tripTab === 'exp' ? 'on' : ''}" onclick="tripTab='exp';render()">Expenses</button>
+    <button class="${tripTab === 'bud' ? 'on' : ''}" onclick="tripTab='bud';render()">Budget</button>
+    <button class="${tripTab === 'mem' ? 'on' : ''}" onclick="tripTab='mem';render()">Members</button>
+  </div>
+  ${tripTab === 'sum' ? tripSummary(t, st) : tripTab === 'exp' ? tripExpenses(t, st) : tripTab === 'bud' ? tripBudgetTab(t, st) : tripMembersTab(t, st)}`;
 }
 
 /* Summary Tab: minimal budget vs expense bars like Home tab */
@@ -79,12 +848,12 @@ function tripSummary(t, st) {
     const kidsHtml = st.budRows.filter(k => r.kids.includes(k.b.ID)).map(k => {
       const kleft = k.plan - k.spent;
       const kover = k.plan > 0 && kleft < 0;
-      return `<div class="crow" style="padding:5px 0 5px 14px;border-top:1px dashed var(--line)" onclick="budOpen='${k.b.ID}';goTrip('bud')">
+      return `<div class="crow" style="padding:5px 0 5px 14px;border-top:1px dashed var(--line)" onclick="budOpen='${k.b.ID}';tripTab='bud';render()">
         <div class="cols" style="font-size:13.5px"><span class="nm">↳ ${esc(k.b.Item)}</span><span class="mute">${k.plan ? short(k.plan) : '–'}</span><span>${short(k.spent)}</span><span class="${kover ? 'warn' : ''}"><b>${k.plan ? short(kleft) : '–'}</b></span></div>
         ${k.plan ? progress(k.spent, k.plan, 'thin', true) : ''}
       </div>`;
     }).join('');
-    return `<div class="crow" style="border-top:1px solid var(--line)" onclick="budOpen='${r.b.ID}';goTrip('bud')">
+    return `<div class="crow" style="border-top:1px solid var(--line)" onclick="budOpen='${r.b.ID}';tripTab='bud';render()">
       <div class="cols"><span class="nm"><b>${esc(r.b.Item)}</b></span><span class="mute">${r.plan ? short(r.plan) : '–'}</span><span>${short(r.spent)}</span><span class="${isOver ? 'warn' : ''}"><b>${r.plan ? short(left) : '–'}</b></span></div>
       ${r.plan ? progress(r.spent, r.plan, 'thin', true) : ''}
       ${kidsHtml}
@@ -103,76 +872,49 @@ function tripSummary(t, st) {
   <h2>Budget vs expenses</h2>
   <div class="card tight" style="padding:6px 14px">
     ${mains.length ? head('Item', 'Budget', 'Spent') + mains.map(budLineRow).join('') : '<div class="mute" style="padding:6px 0">No budget lines set yet.</div>'}
-    ${st.unbud > 0.5 ? `<div class="crow" style="border-top:1px solid var(--line)" onclick="goTrip('exp')"><div class="cols"><span class="nm mute">Outside budget</span><span>–</span><span class="exp">${short(st.unbud)}</span><span>–</span></div></div>` : ''}
+    ${st.unbud > 0.5 ? `<div class="crow" style="border-top:1px solid var(--line)" onclick="tripTab='exp';render()"><div class="cols"><span class="nm mute">Outside budget</span><span>–</span><span class="exp">${short(st.unbud)}</span><span>–</span></div></div>` : ''}
   </div>`;
 }
 
-const tripDonations = st => st.pays.filter(p => p.Kind === 'Donation').map(p => ({id: p.ID, sheet: 'TripPay', date: p.Date, from: p.Member, what: 'cash' + (p.Account ? ' · ' + p.Account : '') + (p.Holder ? ' · with ' + p.Holder : '') + (p.Note ? ' · ' + p.Note : ''), amt: +p.Amount || 0, item: false}))
-  .concat(st.donated.map(e => ({id: e.ID, sheet: 'TripExp', date: e.Date, from: e.Member, what: e.Item + (e.Note ? ' · ' + e.Note : ''), amt: 0, item: true})))
-  .sort((a, b) => String(b.date) < String(a.date) ? -1 : 1);
-const pill = (label, val, col, bg) => `<span style="display:inline-flex;gap:5px;align-items:baseline;padding:2px 9px;border-radius:999px;background:${bg};color:${col};font-size:12.5px"><span style="opacity:.85">${label}</span><b>${val}</b></span>`;
-let memExpOpen = {};
-function toggleMemRow(id) { memExpOpen[id] = !memExpOpen[id]; render(); }
-function memberList(rows) {
-  const R = Math.round;
-  return rows.map(r => {
-    const d = R(r.net), col = d > 0 ? '#16a34a' : d < 0 ? '#dc2626' : '#94a3b8';
-    const po = R(r.paidOut), hd = R(r.held), tc = R(r.out || 0);
-    const thm = tripHeldByMember(r.m.Name);
-    const open = !!memExpOpen[r.m.ID];
-    const rec = Math.abs(d) >= 1 ? `onclick="event.stopPropagation();editTripPay(null,'${qs(r.m.Name)}','${d > 0 ? 'Refund' : 'Collection'}',${Math.abs(d)})"` : '';
-    return `<div class="card tight" style="padding:9px 12px;margin-bottom:7px;border-left:5px solid ${col}" onclick="toggleMemRow('${r.m.ID}')">
-      <div class="row" style="align-items:center">
-        <div><b style="font-size:16px">${open ? '▾ ' : '▸ '}${esc(r.m.Name)}</b>${thm.total > 0.5 ? `<div style="font-size:12px;color:#7c3aed;margin-top:2px">Holds: ${thm.coll > 0.5 ? fmt(R(thm.coll)) + ' collections' : ''}${thm.coll > 0.5 && thm.don > 0.5 ? ' · ' : ''}${thm.don > 0.5 ? fmt(R(thm.don)) + ' donations' : ''}</div>` : ''}</div>
-        <span ${rec} style="text-align:right;line-height:1.05"><span style="display:block;font-size:10.5px;font-weight:700;letter-spacing:.5px;color:${col}">${d > 0 ? 'REFUND' : d < 0 ? 'COLLECT' : 'SETTLED'}</span><span style="font-size:21px;font-weight:800;color:${col}">${d === 0 ? '✓' : fmt(Math.abs(d))}</span></span>
-      </div>
-      ${open ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">
-        <div style="display:flex;flex-wrap:wrap;gap:6px">${pill('Collected', fmt(R(r.collected)), '#0f766e', 'rgba(13,148,136,.14)')}${po > 0 ? pill('Paid out', fmt(po), '#2563eb', 'rgba(37,99,235,.13)') : ''}${tc > 0.5 ? pill('To collect', fmt(tc), '#dc2626', 'rgba(220,38,38,.12)') : ''}${hd > 0 ? pill('Holds', fmt(hd), '#7c3aed', 'rgba(124,58,237,.14)') : ''}${pill('Cost', fmt(R(r.cost)), '#c2410c', 'rgba(234,88,12,.14)')}</div>
-        <div class="row mute" style="font-size:12px;margin-top:6px"><span onclick="event.stopPropagation();memberSheet('${r.m.ID}')" class="lnk" style="margin:0">Full member details & payment ›</span>${Math.abs(d) >= 1 ? `<span ${rec} class="lnk" style="margin:0">${d > 0 ? 'Record refund' : 'Record collection'}</span>` : ''}</div>
-      </div>` : ''}
-    </div>`;
-  }).join('');
+function tripExpenses(t, st) {
+  const shared = st.exps.filter(e => e.Kind !== 'Donated' && e.Status !== 'Private').sort((a, b) => String(b.Date).localeCompare(String(a.Date)));
+  const priv = st.private.slice().sort((a, b) => String(b.Date).localeCompare(String(a.Date)));
+  const bName = id => st.buds.find(b => b.ID === id)?.Item || '';
+  const row = e => {
+    const tag = e.Status === 'Agreed' ? 'agreed' : e.PaidBy ? 'paid by ' + e.PaidBy : 'trip fund';
+    const sub2 = [e.Date, e.Category, bName(e.BudgetID), tag, e.Note].filter(Boolean).join(' · ');
+    return `<div class="item" onclick="editTripExp('${e.ID}')"><div class="main"><div class="title">${esc(e.Item)}</div><div class="sub">${esc(sub2)}</div></div><div class="amt exp">${n0(e.Amount)}</div></div>`;
+  };
+  return `<div class="actions"><button class="primary" onclick="editTripExp(null)">+ Add expense</button><button onclick="editTripPay(null,null,'Collection')">+ Collect money</button></div>
+  <div class="card tight">${shared.length ? shared.map(row).join('') : '<div class="empty">No trip expenses yet.</div>'}</div>
+  ${priv.length ? `<h2>Paid personally (not in trip split)</h2><div class="card tight">${priv.map(row).join('')}</div>` : ''}`;
 }
 
-/* Members Tab: no hero banner; collapsed member rows with tap-to-expand details, member payments, donations, and member report */
-function tripMembersTab(t, st) {
-  const S = tripSettle(t, st);
-  const pays = st.pays.filter(p => p.Kind !== 'Donation'), dons = tripDonations(st);
-
-  return `<h2>Members</h2>
-  ${S.rows.length ? memberList(S.rows) : '<div class="empty">No members coming yet.<br>Tap + to add people joining the trip.</div>'}
-  ${Math.abs(st.otherPaid) > 0.5 ? `<div class="card tight"><div class="row"><span class="mute">Payments from removed members</span><b>${fmt(st.otherPaid)}</b></div></div>` : ''}
-
-  <h2>Member payments</h2>
-  <div class="card tight">${pays.length ? pays.slice().sort((a, b) => String(b.Date) < String(a.Date) ? -1 : 1).map(p => `<div class="row" style="padding:7px 0;border-top:1px solid var(--line)" onclick="editTripPay('${p.ID}')"><span style="min-width:0"><span class="mute">${esc(String(p.Date).slice(5))}</span> ${esc(p.Member)}${p.Kind === 'Refund' ? ' <span class="chip bad">refund</span>' : ''}${p.Account ? ` <span class="chip">${esc(p.Account)}</span>` : ''}${p.Holder ? ` <span class="chip" style="background:rgba(124,58,237,.14);color:#7c3aed">${p.Kind === 'Refund' ? 'paid by' : 'with'} ${esc(p.Holder)}</span>` : ''}${p.TxID ? ' <span class="mute" style="font-size:11.5px">· in my accounts</span>' : ''}${p.Note ? ` <span class="mute" style="font-size:12px">· ${esc(p.Note)}</span>` : ''}</span><b class="${p.Kind === 'Refund' ? 'exp' : 'inc'}">${p.Kind === 'Refund' ? '−' : '+'} ${fmt(p.Amount)}</b></div>`).join('') : '<div class="mute" style="padding:6px 0">No member payments recorded yet.</div>'}</div>
-
-  <h2>Donations</h2>
-  <div class="card tight">${dons.length ? dons.map(x => `<div class="row" style="padding:7px 0;border-top:1px solid var(--line)" onclick="editDonation('${x.id}','${x.sheet}')"><span style="min-width:0"><span class="mute">${esc(String(x.date).slice(5))}</span> ${esc(x.from)} <span class="mute" style="font-size:12px">· ${x.item ? '🎁 ' : ''}${esc(x.what)}</span></span><b class="inc">${x.item ? '' : '+ ' + fmt(x.amt)}</b></div>`).join('') : '<div class="mute" style="padding:6px 0">No donations recorded yet.</div>'}</div>
-
-  <div class="actions" style="grid-template-columns:1fr;margin-top:8px"><button onclick="memberReport('${t.ID}')">📄 Share member & donation report</button></div>`;
+const TCAT_IC = {Transport:'🚗',Stay:'🏨',Food:'🍛',Tickets:'🎟️',Shopping:'🛍️',Other:'📦'};
+function budgetShareInfo(st) {
+  const mains = st.budRows.filter(r => !r.sub), rows = st.rows.map(r => ({m: r.m, amt: r.planShare || 0, w: +r.m.Weight > 0 ? +r.m.Weight : 1, cats: mains.map(c => ({name: c.b.Item, amt: (c.alloc.find(a => a.name === r.m.Name) || {amt: 0}).amt})).filter(x => x.amt > 0.5), notIn: mains.filter(c => ((c.alloc.find(a => a.name === r.m.Name) || {amt: 0}).amt) <= 0.5 && c.plan > 0).map(c => c.b.Item)}));
+  const total = st.budget, n = rows.length, avg = n ? total / n : 0, even = rows.length ? Math.max.apply(null, rows.map(r => r.amt)) - Math.min.apply(null, rows.map(r => r.amt)) < 1 : true;
+  return {rows, total, n, avg, even};
 }
-<!-- ... existing code ... -->
-  const bRow = (r, nested, col) => { const b = r.b, pc = r.plan > 0 ? r.spent / r.plan * 100 : 0, nf = notFor(b), ic = TCAT_IC[b.Category] || '🏷️';
-    return `<div class="ac-r ${nested ? 'nest' : ''}" onclick="budShow('${b.ID}')"><span class="ac-ic" style="--t:${col}">${ic}</span><div class="ac-n"><b>${esc(b.Item)}</b><small>${r.left < -0.5 ? 'over ' + fmt(-r.left) : 'left ' + fmt(r.left)} · spent ${fmt(r.spent)}${+b.Rate > 0 && +b.Qty > 0 ? ' · ' + fmt(+b.Rate) + ' × ' + (+b.Qty) : ''}${+b.PerPerson > 0 ? ' · ' + fmt(b.PerPerson) + '×' + (Math.round(r.n * 10) / 10) : ''}${nf.length ? ' · not ' + esc(nf.join(', ')) : ''}</small></div><div class="ac-b"><b>${fmt(r.plan)}</b><small style="color:${spendColor(pc)}">${r.plan > 0 ? Math.round(pc) + '%' : ''}</small></div></div>
-      <div style="padding:0 0 8px 50px">${progress(r.spent, r.plan, 'thin', true)}</div>${budOpen === b.ID ? panel(r) : ''}`; };
-  const group = (r, gi) => { const col = BANKCOL[gi % BANKCOL.length], st2 = `--c:${col[0]};--ct:${col[1]}`, ks = kidsOf2(r);
-    if (!ks.length) return `<div class="ac-card" style="${st2}">${bRow(r, false, col[0])}</div>`;
-    return `<div class="ac-card" style="${st2}"><div class="ac-gh" onclick="budShow('${r.b.ID}')"><span class="ac-ic" style="--t:${col[0]}">${TCAT_IC[r.b.Category] || '🏷️'}</span><b style="color:${col[0]}">${esc(r.b.Item)}</b><span class="ac-tot">${fmt(r.plan)}</span></div>
-      <div style="padding:0 0 6px 50px"><div class="row mute" style="font-size:12px"><span>spent ${fmt(r.spent)}${r.unalloc > 0.5 ? ' · not split ' + fmt(r.unalloc) : ''}</span><span style="color:${spendColor(r.plan > 0 ? r.spent / r.plan * 100 : 0)};font-weight:600">${r.left < -0.5 ? 'over ' + fmt(-r.left) : 'left ' + fmt(r.left)}</span></div>${progress(r.spent, r.plan, 'thin', true)}</div>
-      ${budOpen === r.b.ID ? panel(r) : ''}${ks.map(k => bRow(k, true, col[0])).join('')}</div>`; };
+
+function tripBudgetTab(t, st) {
+  const B = budgetShareInfo(st), R = Math.round, mains = st.budRows.filter(r => !r.sub), kidsOf2 = r => st.budRows.filter(k => r.kids.includes(k.b.ID));
+  const notFor = b => { const ex = new Set(String(b.Exclude || '').split('|').filter(Boolean)); return st.ms.filter(m => ex.has(m.Name)).map(m => m.Name); };
+  const panel = r => `<div class="exp-box"><div class="row" style="margin-bottom:6px"><b>${esc(r.b.Item)}</b><span>${r.items.length ? `<button class="lnk" style="margin:0" onclick="event.stopPropagation();editTripExp(null,'${r.b.ID}')">+ Expense</button>` : ''} <button class="lnk" style="margin:0" onclick="event.stopPropagation();editBud('${r.b.ID}')">Edit</button></span></div>${r.items.length ? r.items.map(e => `<div class="erow" onclick="event.stopPropagation();editTripExp('${e.ID}')"><span>${esc(e.Date)} · ${esc(e.Item)}${e.PaidBy ? ' · ' + esc(e.PaidBy) : ''}</span><b class="exp">${fmt(e.Amount)}</b></div>`).join('') : '<div class="mute">No expenses on this line yet.</div>'}${!r.hasK ? `<div class="row mute" style="font-size:12px;margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)"><span>Per person: <b>${fmt(r.perHead)}</b></span><span>${r.alloc.filter(a => a.amt > 0.5).map(a => esc(a.name) + ' ' + short(a.amt)).join(' · ')}</span></div>` : ''}</div>`;
+  const memRow = r => { const open = budMem === r.m.ID; return `<div class="crow" onclick="budMem=budMem==='${r.m.ID}'?null:'${r.m.ID}';render()"><div class="row"><div><b>${open ? '▾ ' : '▸ '}${esc(r.m.Name)}</b>${r.w !== 1 ? ` <span class="chip">×${r.w}</span>` : ''}${r.notIn.length ? `<div class="mute" style="font-size:11.5px">not in ${esc(r.notIn.join(', '))}</div>` : ''}</div><b>${fmt(R(r.amt))}</b></div>${open ? `<div class="exp-box">${r.cats.length ? r.cats.map(c => `<div class="erow"><span>${esc(c.name)}</span><b>${fmt(R(c.amt))}</b></div>`).join('') : '<div class="mute">No share</div>'}</div>` : ''}</div>`;
 
   const head = (x, y, z) => `<div class="cols h"><span class="nm">${x}</span><span>${y}</span><span>${z}</span><span>Left</span></div>`;
   const minCatRow = r => {
     const left = r.plan - r.spent, over = r.plan > 0 && left < 0;
-    const kidsHtml = st.budRows.filter(k => r.kids.includes(k.b.ID)).map(k => {
+    const kidsHtml = kidsOf2(r).map(k => {
       const kl = k.plan - k.spent, kov = k.plan > 0 && kl < 0;
-      return `<div class="crow" style="padding:5px 0 5px 14px;border-top:1px dashed var(--line)" onclick="budShow('${k.b.ID}')">
+      return `<div class="crow" style="padding:5px 0 5px 14px;border-top:1px dashed var(--line)" onclick="budOpen='${k.b.ID}';render()">
         <div class="cols" style="font-size:13.5px"><span class="nm">↳ ${esc(k.b.Item)}</span><span class="mute">${k.plan ? short(k.plan) : '–'}</span><span>${short(k.spent)}</span><span class="${kov ? 'warn' : ''}"><b>${k.plan ? short(kl) : '–'}</b></span></div>
         ${k.plan ? progress(k.spent, k.plan, 'thin', true) : ''}
         ${budOpen === k.b.ID ? panel(k) : ''}
       </div>`;
     }).join('');
-    return `<div class="crow" style="border-top:1px solid var(--line)" onclick="budShow('${r.b.ID}')">
+    return `<div class="crow" style="border-top:1px solid var(--line)" onclick="budOpen='${r.b.ID}';render()">
       <div class="cols"><span class="nm"><b>${esc(r.b.Item)}</b></span><span class="mute">${r.plan ? short(r.plan) : '–'}</span><span>${short(r.spent)}</span><span class="${over ? 'warn' : ''}"><b>${r.plan ? short(left) : '–'}</b></span></div>
       ${r.plan ? progress(r.spent, r.plan, 'thin', true) : ''}
       ${budOpen === r.b.ID ? panel(r) : ''}
@@ -199,10 +941,298 @@ function tripMembersTab(t, st) {
   ${B.rows.length ? `<h2>Individual budget plan</h2><div class="card tight" style="padding:0 12px">${B.rows.map(memRow).join('')}<div class="row" style="padding:8px 0;border-top:2px solid var(--line)"><b>Total</b><b>${fmt(R(sum(B.rows, r => r.amt)))}</b></div></div>` : ''}
   <div class="actions" style="grid-template-columns:1fr;margin-top:8px"><button onclick="budgetReport('${t.ID}')">📄 Trip budget report</button></div>`;
 }
-<!-- ... existing code ... -->
+
+const tripDonations = st => st.pays.filter(p => p.Kind === 'Donation').map(p => ({id: p.ID, sheet: 'TripPay', date: p.Date, from: p.Member, what: 'cash' + (p.Account ? ' · ' + p.Account : '') + (p.Holder ? ' · with ' + p.Holder : '') + (p.Note ? ' · ' + p.Note : ''), amt: +p.Amount || 0, item: false}))
+  .concat(st.donated.map(e => ({id: e.ID, sheet: 'TripExp', date: e.Date, from: e.Member, what: e.Item + (e.Note ? ' · ' + e.Note : ''), amt: 0, item: true})))
+  .sort((a, b) => String(b.date) < String(a.date) ? -1 : 1);
+const badgePill = (label, val, col, bg) => `<span style="display:inline-flex;gap:5px;align-items:baseline;padding:2px 9px;border-radius:999px;background:${bg};color:${col};font-size:12.5px"><span style="opacity:.85">${label}</span><b>${val}</b></span>`;
+let memExpOpen = {};
+function toggleMemRow(id) { memExpOpen[id] = !memExpOpen[id]; render(); }
+
+function memberList(rows) {
+  const R = Math.round;
+  return rows.map(r => {
+    const d = R(r.net), col = d > 0 ? '#16a34a' : d < 0 ? '#dc2626' : '#94a3b8';
+    const po = R(r.paidOut), hd = R(r.held), tc = R(r.out || 0);
+    const thm = tripHeldByMember(r.m.Name);
+    const open = !!memExpOpen[r.m.ID];
+    const rec = Math.abs(d) >= 1 ? `onclick="event.stopPropagation();editTripPay(null,'${qs(r.m.Name)}','${d > 0 ? 'Refund' : 'Collection'}',${Math.abs(d)})"` : '';
+    return `<div class="card tight" style="padding:9px 12px;margin-bottom:7px;border-left:5px solid ${col}" onclick="toggleMemRow('${r.m.ID}')">
+      <div class="row" style="align-items:center">
+        <div><b style="font-size:16px">${open ? '▾ ' : '▸ '}${esc(r.m.Name)}</b>${thm.total > 0.5 ? `<div style="font-size:12px;color:#7c3aed;margin-top:2px">Holds: ${thm.coll > 0.5 ? fmt(R(thm.coll)) + ' collections' : ''}${thm.coll > 0.5 && thm.don > 0.5 ? ' · ' : ''}${thm.don > 0.5 ? fmt(R(thm.don)) + ' donations' : ''}</div>` : ''}</div>
+        <span ${rec} style="text-align:right;line-height:1.05"><span style="display:block;font-size:10.5px;font-weight:700;letter-spacing:.5px;color:${col}">${d > 0 ? 'REFUND' : d < 0 ? 'COLLECT' : 'SETTLED'}</span><span style="font-size:21px;font-weight:800;color:${col}">${d === 0 ? '✓' : fmt(Math.abs(d))}</span></span>
+      </div>
+      ${open ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">
+        <div style="display:flex;flex-wrap:wrap;gap:6px">${badgePill('Collected', fmt(R(r.collected)), '#0f766e', 'rgba(13,148,136,.14)')}${po > 0 ? badgePill('Paid out', fmt(po), '#2563eb', 'rgba(37,99,235,.13)') : ''}${tc > 0.5 ? badgePill('To collect', fmt(tc), '#dc2626', 'rgba(220,38,38,.12)') : ''}${hd > 0 ? badgePill('Holds', fmt(hd), '#7c3aed', 'rgba(124,58,237,.14)') : ''}${badgePill('Cost', fmt(R(r.cost)), '#c2410c', 'rgba(234,88,12,.14)')}</div>
+        <div class="row mute" style="font-size:12px;margin-top:6px"><span onclick="event.stopPropagation();memberSheet('${r.m.ID}')" class="lnk" style="margin:0">Full member details & payment ›</span>${Math.abs(d) >= 1 ? `<span ${rec} class="lnk" style="margin:0">${d > 0 ? 'Record refund' : 'Record collection'}</span>` : ''}</div>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function tripMembersTab(t, st) {
+  const S = tripSettle(t, st);
+  const pays = st.pays.filter(p => p.Kind !== 'Donation'), dons = tripDonations(st);
+
+  return `<h2>Members</h2>
+  ${S.rows.length ? memberList(S.rows) : '<div class="empty">No members coming yet.<br>Tap + to add people joining the trip.</div>'}
+  ${Math.abs(st.otherPaid) > 0.5 ? `<div class="card tight"><div class="row"><span class="mute">Payments from removed members</span><b>${fmt(st.otherPaid)}</b></div></div>` : ''}
+
+  <h2>Member payments</h2>
+  <div class="card tight">${pays.length ? pays.slice().sort((a, b) => String(b.Date) < String(a.Date) ? -1 : 1).map(p => `<div class="row" style="padding:7px 0;border-top:1px solid var(--line)" onclick="editTripPay('${p.ID}')"><span style="min-width:0"><span class="mute">${esc(String(p.Date).slice(5))}</span> ${esc(p.Member)}${p.Kind === 'Refund' ? ' <span class="chip bad">refund</span>' : ''}${p.Account ? ` <span class="chip">${esc(p.Account)}</span>` : ''}${p.Holder ? ` <span class="chip" style="background:rgba(124,58,237,.14);color:#7c3aed">${p.Kind === 'Refund' ? 'paid by' : 'with'} ${esc(p.Holder)}</span>` : ''}${p.TxID ? ' <span class="mute" style="font-size:11.5px">· in my accounts</span>' : ''}${p.Note ? ` <span class="mute" style="font-size:12px">· ${esc(p.Note)}</span>` : ''}</span><b class="${p.Kind === 'Refund' ? 'exp' : 'inc'}">${p.Kind === 'Refund' ? '−' : '+'} ${fmt(p.Amount)}</b></div>`).join('') : '<div class="mute" style="padding:6px 0">No member payments recorded yet.</div>'}</div>
+
+  <h2>Donations</h2>
+  <div class="card tight">${dons.length ? dons.map(x => `<div class="row" style="padding:7px 0;border-top:1px solid var(--line)" onclick="editDonation('${x.id}','${x.sheet}')"><span style="min-width:0"><span class="mute">${esc(String(x.date).slice(5))}</span> ${esc(x.from)} <span class="mute" style="font-size:12px">· ${x.item ? '🎁 ' : ''}${esc(x.what)}</span></span><b class="inc">${x.item ? '' : '+ ' + fmt(x.amt)}</b></div>`).join('') : '<div class="mute" style="padding:6px 0">No donations recorded yet.</div>'}</div>
+
+  <div class="actions" style="grid-template-columns:1fr;margin-top:8px"><button onclick="memberReport('${t.ID}')">📄 Share member & donation report</button></div>`;
+}
+
+function memberSheet(id) {
+  const m = D.TripMembers.find(x => x.ID === id); if (!m) return;
+  const t = trips().find(x => x.ID === m.TripID); if (!t) return;
+  const st = tripStats(t), r = st.rows.find(x => x.m.ID === m.ID); if (!r) return;
+  const d = Math.round(r.net);
+  const mine = st.exps.filter(e => e.Kind !== 'Donated' && e.Status !== 'Private' && !new Set(String(e.Exclude || '').split('|').filter(Boolean)).has(m.Name));
+  const wSum = e => { const f = new Set(String(e.Exclude || '').split('|').filter(Boolean)), pool = st.ms.filter(x => !f.has(x.Name)), list = pool.length ? pool : st.ms; return sum(list, x => +x.Weight > 0 ? +x.Weight : 1); };
+  const myShare = e => { const w = wSum(e); return w > 0 ? (+e.Amount || 0) * ((+m.Weight > 0 ? +m.Weight : 1) / w) : 0; };
+  const pays = st.pays.filter(p => p.Member === m.Name && p.Kind !== 'Donation');
+  const thm = tripHeldByMember(m.Name);
+
+  openSheet(esc(m.Name), `
+    <div class="row"><span class="mute">${d > 0 ? 'Refund due' : d < 0 ? 'To collect' : 'Settled'}</span><b>${d === 0 ? 'Settled' : fmt(Math.abs(d))}</b></div>
+    <div class="row"><span class="mute">Collected</span><b>${fmt(r.collected)}</b></div>
+    <div class="row"><span class="mute">Paid directly</span><b>${fmt(r.paidOut)}</b></div>
+    <div class="row"><span class="mute">Share of expenses</span><b>${fmt(r.cost)}</b></div>
+    ${thm.total > 0.5 ? `<div class="row"><span class="mute">Holds (collections/donations)</span><b>${fmt(thm.total)}</b></div>` : ''}
+    ${Math.abs(d) >= 1 ? `<div class="actions" style="grid-template-columns:1fr"><button class="primary" onclick="closeSheet();editTripPay(null,'${qs(m.Name)}','${d > 0 ? 'Refund' : 'Collection'}',${Math.abs(d)})">${d > 0 ? 'Record refund' : 'Record collection'}</button></div>` : ''}
+    <h2>Payments (${pays.length})</h2>
+    ${pays.length ? pays.map(p => `<div class="item" onclick="closeSheet();editTripPay('${p.ID}')"><div class="main"><div class="title">${esc(p.Kind || 'Collection')}${p.Account ? ' · ' + esc(p.Account) : ''}${p.Holder ? ' · with ' + esc(p.Holder) : ''}</div><div class="sub">${esc(p.Date)}${p.Note ? ' · ' + esc(p.Note) : ''}</div></div><div class="amt ${p.Kind === 'Refund' ? 'exp' : 'inc'}">${p.Kind === 'Refund' ? '−' : '+'}${n0(p.Amount)}</div></div>`).join('') : '<div class="mute">None yet.</div>'}
+    <h2>Expenses (${mine.length})</h2>
+    ${mine.map(e => `<div class="item" onclick="closeSheet();editTripExp('${e.ID}')"><div class="main"><div class="title">${esc(e.Item)}</div><div class="sub">${esc(e.Date)} · total ${fmt(e.Amount)}</div></div><div class="amt">${fmt(myShare(e))}</div></div>`).join('')}
+    <div class="foot"><button onclick="closeSheet();editMember('${m.ID}')">Edit member</button><button onclick="closeSheet()">Done</button></div>`);
+}
+
+/* ---------------- MORE (Loans, Bills, Goals, Budgets) ---------------- */
+function moreScreen() {
+  return `<div class="subtabs">
+    <button class="${sub === 'loans' ? 'on' : ''}" onclick="sub='loans';render()">Loans</button>
+    <button class="${sub === 'bills' ? 'on' : ''}" onclick="sub='bills';render()">Bills</button>
+    <button class="${sub === 'goals' ? 'on' : ''}" onclick="sub='goals';render()">Goals</button>
+    <button class="${sub === 'budgets' ? 'on' : ''}" onclick="sub='budgets';render()">Budgets</button>
+    <button class="${sub === 'cats' ? 'on' : ''}" onclick="sub='cats';render()">Categories</button>
+  </div>${sub === 'loans' ? loansTab() : sub === 'bills' ? billsTab() : sub === 'goals' ? goalsTab() : sub === 'budgets' ? budgetsTab() : catsTab()}`;
+}
+
+function loansTab() {
+  const open = D.Loans.filter(l => outstanding(l) > 0.005), closed = D.Loans.filter(l => outstanding(l) <= 0.005);
+  const lent = sum(open.filter(l => l.Direction === 'Lent'), outstanding), bor = sum(open.filter(l => l.Direction === 'Borrowed'), outstanding);
+  const row = l => {
+    const rem = outstanding(l), due = parseD(l.DueDate), d = due ? daysTo(due) : null;
+    const badge = rem <= 0.005 ? '<span class="chip ok">paid</span>' : d !== null && d < 0 ? `<span class="chip bad">${-d}d late</span>` : d !== null && d <= 7 ? `<span class="chip warn">in ${d}d</span>` : '';
+    return `<div class="item" onclick="editLoan('${l.ID}')"><div class="main"><div class="title">${esc(l.Person || l.Name)} ${badge}</div><div class="sub">${l.Direction === 'Lent' ? 'To receive' : 'You owe'} · ${esc(l.Account || '')}${due ? ' · due ' + shortDate(due) : ''}</div></div><div class="amt ${l.Direction === 'Lent' ? 'inc' : 'exp'}">${fmt(rem)}<small>of ${n0(l.Principal)}</small></div></div>`;
+  };
+  return `<div class="card tight"><div class="row"><div><div class="mute" style="font-size:12px">Lent out</div><b class="inc" style="font-size:17px">${fmt(lent)}</b></div><div style="text-align:right"><div class="mute" style="font-size:12px">Borrowed</div><b class="exp" style="font-size:17px">${fmt(bor)}</b></div></div></div>
+  <div class="card tight">${open.length ? open.map(row).join('') : '<div class="empty">No open loans.</div>'}</div>
+  ${closed.length ? `<h2>Settled</h2><div class="card tight">${closed.map(row).join('')}</div>` : ''}`;
+}
+
+function billsTab() {
+  return `<div class="card tight">${D.Bills.length ? D.Bills.map(b => {
+    const d = parseD(b.DueDate), n = d ? daysTo(d) : null;
+    const when = b.Active === 'No' ? 'paused' : n === null ? '' : n < 0 ? `${-n}d overdue` : n === 0 ? 'due today' : `in ${n}d`;
+    return `<div class="item" onclick="editBill('${b.ID}')"><div class="main"><div class="title">${esc(b.Name)}</div><div class="sub">${esc(b.Freq || 'Monthly')} · ${esc(b.Account || '')}${when ? ' · ' + when : ''}</div></div><div class="amt">${fmt(b.Amount)}</div></div>`;
+  }).join('') : '<div class="empty">No recurring bills.</div>'}</div>`;
+}
+
+function goalsTab() {
+  return `<div class="card tight">${D.Goals.length ? D.Goals.map(g => {
+    const cur = +g.Saved || 0, tgt = +g.Target || 0;
+    return `<div class="item" onclick="editGoal('${g.ID}')"><div class="main"><div class="title">${esc(g.Name)}</div><div class="sub">${fmt(cur)} of ${fmt(tgt)}${g.TargetDate ? ' · ' + shortDate(parseD(g.TargetDate)) : ''}</div>${progress(cur, tgt, 'thin')}</div><div class="amt">${tgt > 0 ? Math.round(cur / tgt * 100) + '%' : ''}</div></div>`;
+  }).join('') : '<div class="empty">No savings goals yet.</div>'}</div>`;
+}
+
+function budgetsTab() {
+  const list = D.Budgets.filter(b => b.Month === month);
+  const spent = c => sum(D.Transactions.filter(t => inMonth(t.Date, month) && isExpense(t) && (t.Category === c || catParent(t.Category) === c)), lkr);
+  return `${monthBar()}<div class="card tight">${list.length ? list.map(b => {
+    const sp = spent(b.Category), cap = +b.Amount || 0;
+    return `<div class="item" onclick="editBudget('${b.ID}')"><div class="main"><div class="title">${esc(b.Category)}${b.Account ? ' · ' + esc(b.Account) : ''}</div><div class="sub">${fmt(sp)} of ${fmt(cap)}</div>${progress(sp, cap, 'thin')}</div><div class="amt">${cap > 0 ? Math.round(sp / cap * 100) + '%' : ''}</div></div>`;
+  }).join('') : '<div class="empty">No budgets for ' + esc(monthLabel(month)) + '.</div>'}</div>`;
+}
+
+function catsTab() {
+  const list = D.Categories.filter(c => (c.Type || 'Expense') === catType);
+  const parents = list.filter(c => !c.Parent), kids = p => list.filter(c => c.Parent === p);
+  return `<div class="seg"><button class="${catType === 'Expense' ? 'on' : ''}" onclick="catType='Expense';render()">Expense</button><button class="${catType === 'Income' ? 'on' : ''}" onclick="catType='Income';render()">Income</button></div>
+  <div class="card tight">${parents.length ? parents.map(p => `<div class="item" onclick="editCat('${p.ID}')"><div class="main"><div class="title">${esc(p.Name)}</div><div class="sub">${kids(p.Name).map(k => k.Name).join(', ') || 'Main category'}</div></div><div class="amt">›</div></div>`).join('') : '<div class="empty">No categories yet.</div>'}</div>`;
+}
+
+/* ---------------- FORMS & QUICK ADD ---------------- */
+function quickAdd() {
+  if (tab === 'accounts') return editAccount();
+  if (tab === 'trips') {
+    if (!tripId) return editTrip();
+    const items = [
+      {l:'+ Expense', fn:"editTripExp(null)"},
+      {l:'+ Collect / refund', fn:"editTripPay(null)"},
+      {l:'+ Donation', fn:"editDonation(null)"},
+      {l:'+ Member', fn:"editMember(null)"},
+      {l:'+ Budget item', fn:"editBud(null)"}
+    ];
+    return openSheet('Add to trip', items.map(x => `<div class="item" onclick="closeSheet();${x.fn}"><div class="main"><div class="title">${x.l}</div></div><span>›</span></div>`).join(''));
+  }
+  if (tab === 'more') {
+    if (sub === 'bills') return editBill();
+    if (sub === 'goals') return editGoal();
+    if (sub === 'budgets') return editBudget();
+    if (sub === 'cats') return editCat();
+    return editLoan();
+  }
+  editTx(null, 'Expense', homeAcct || defAcct() || '');
+}
+
+function openSheet(title, html) { $('#sheet').innerHTML = `<h3><span>${title}</span><button class="x" onclick="closeSheet()">×</button></h3>${html}`; $('#backdrop').classList.add('open'); }
+function closeSheet() { $('#backdrop').classList.remove('open'); sheetCtx = null; }
+
+function openForm(title, sheet, fields, values, opts = {}) {
+  sheetCtx = {sheet, values, opts};
+  const v = values || {};
+  const body = fields.map(f => {
+    const val2 = v[f.k] ?? '';
+    if (f.t === 'select') {
+      const os = (f.o || []).map(x => {
+        const oVal = typeof x === 'object' ? x.v : x, oLab = typeof x === 'object' ? x.l : x;
+        return `<option value="${esc(oVal)}" ${String(oVal) === String(val2) ? 'selected' : ''}>${esc(oLab)}</option>`;
+      }).join('');
+      return `<div class="field"><label>${esc(f.l)}</label><select name="${esc(f.k)}">${os}</select>${f.hint ? `<div class="hint">${esc(f.hint)}</div>` : ''}</div>`;
+    }
+    if (f.t === 'textarea') return `<div class="field"><label>${esc(f.l)}</label><textarea name="${esc(f.k)}">${esc(val2)}</textarea></div>`;
+    return `<div class="field"><label>${esc(f.l)}</label><input name="${esc(f.k)}" type="${f.t || 'text'}" ${f.step ? `step="${f.step}"` : ''} value="${esc(val2)}" ${f.req ? 'required' : ''}>${f.hint ? `<div class="hint">${esc(f.hint)}</div>` : ''}</div>`;
+  }).join('');
+  const canDel = !!(v.ID && !opts.noDelete);
+  openSheet(title, `<form id="sf">${body}<div class="foot">${canDel ? `<button type="button" class="del" onclick="delRecord()">Delete</button>` : ''}<button type="button" onclick="closeSheet()">Cancel</button><button type="submit" class="save">Save</button></div></form>`);
+  $('#sf').onsubmit = e => {
+    e.preventDefault();
+    const out = Object.assign({}, v);
+    new FormData(e.target).forEach((val3, k) => { out[k] = val3; });
+    if (opts.submit) { if (opts.submit(out) === false) return; } else call('save', sheet, out);
+    closeSheet();
+  };
+}
+function delRecord() {
+  if (!sheetCtx || !sheetCtx.values?.ID) return;
+  const {sheet, values, opts} = sheetCtx;
+  if (opts?.onDelete) opts.onDelete(values);
+  call('remove', sheet, values.ID);
+  closeSheet();
+}
+
+function editTx(id, type, acct) {
+  const t0 = id ? D.Transactions.find(x => x.ID === id) : null;
+  const v = t0 ? Object.assign({}, t0) : {Date: today(), Type: type || 'Expense', Account: acct || defAcct() || accOpts()[0] || '', Amount: '', Category: '', ToAccount: '', Note: ''};
+  const cats = D.Categories.map(c => c.Name), accts = accOpts();
+  const fields = [
+    {k:'Type', l:'Type', t:'select', o:['Expense', 'Income', 'Transfer']},
+    {k:'Amount', l:'Amount', t:'number', step:'any', req:true},
+    {k:'Account', l:'Account', t:'select', o:accts},
+    {k:'ToAccount', l:'To account (for transfer)', t:'select', o:[''].concat(accts)},
+    {k:'Category', l:'Category', t:'select', o:[''].concat(cats)},
+    {k:'Date', l:'Date', t:'date', req:true},
+    {k:'Note', l:'Note'}
+  ];
+  openForm(id ? 'Edit transaction' : 'New transaction', 'Transactions', fields, v, {
+    submit: o => {
+      if (o.Type === 'Transfer' && !o.Category) o.Category = 'Transfer';
+      if (o.Type === 'Transfer' && o.ToAccount && o.ToAccount === o.Account) { toast('Pick a different destination account'); return false; }
+      call('save', 'Transactions', o);
+    }
+  });
+  const fEl = $('#sf');
+  const sync = () => {
+    const tr = fEl.Type.value === 'Transfer';
+    fEl.ToAccount.closest('.field').style.display = tr ? '' : 'none';
+    fEl.Category.closest('.field').style.display = tr ? 'none' : '';
+  };
+  fEl.Type.addEventListener('change', sync); sync();
+}
+
+function editAccount(id) {
+  const a0 = id ? D.Accounts.find(x => x.ID === id) : null;
+  const v = a0 ? Object.assign({}, a0) : {Name:'', Type:'Bank', Currency:'LKR', Opening:0, Parent:'', Icon:'', Color:''};
+  const parents = [''].concat(D.Accounts.filter(x => x.ID !== id).map(x => x.Name));
+  openForm(id ? 'Edit account' : 'New account', 'Accounts', [
+    {k:'Name', l:'Account name', req:true},
+    {k:'Type', l:'Type', t:'select', o:['Bank', 'Savings', 'Cash', 'Card', 'Wallet', 'Investment']},
+    {k:'Currency', l:'Currency', t:'select', o:['LKR', 'USD', 'EUR', 'GBP']},
+    {k:'Opening', l:'Opening balance', t:'number', step:'any'},
+    {k:'Parent', l:'Parent account (optional)', t:'select', o:parents},
+    {k:'Icon', l:'Icon emoji', hint:'Optional, e.g. 🏦 or 🐷'}
+  ], v);
+}
+
+function editTrip(id) {
+  const t0 = id ? D.Trips.find(x => x.ID === id) : null;
+  const v = t0 ? Object.assign({}, t0, {Account: accLab(t0.Account)}) : {Name:'', Destination:'', Start: today(), End:'', Status:'Planning', Account: accLab(defAcct())};
+  openForm(id ? 'Edit trip' : 'New trip', 'Trips', [
+    {k:'Name', l:'Trip name', req:true},
+    {k:'Destination', l:'Destination'},
+    {k:'Start', l:'Start date', t:'date'},
+    {k:'End', l:'End date', t:'date'},
+    {k:'Status', l:'Status', t:'select', o:['Planning', 'Ongoing', 'Done']},
+    {k:'Account', l:'Default trip account', t:'select', o:savAccOpts()}
+  ], v, {submit: o => { o.Account = accVal(o.Account); call('save', 'Trips', o); }});
+}
+
+function editMember(id) {
+  const m0 = id ? D.TripMembers.find(x => x.ID === id) : null;
+  const v = m0 ? Object.assign({}, m0) : {TripID: tripId, Name:'', Role:'Member', Weight:1};
+  openForm(id ? 'Edit member' : 'Add member / donor', 'TripMembers', [
+    {k:'Name', l:'Name', req:true},
+    {k:'Role', l:'Participation & cost sharing', t:'select', o:[{v:'Member', l:'Coming (shares trip costs)'}, {v:'Donor', l:'Not coming / Donor (excluded from cost split)'}]},
+    {k:'Weight', l:'Cost share weight', t:'number', step:'0.5', hint:'1 = normal share, 0.5 = half share, 0 = none'}
+  ], v, {
+    submit: o => {
+      if (o.Role === 'Donor') o.Weight = 0;
+      call('save', 'TripMembers', o);
+    }
+  });
+}
+
+function editBud(id) {
+  const b0 = id ? D.TripBudget.find(x => x.ID === id) : null;
+  const parents = [''].concat(D.TripBudget.filter(x => x.TripID === tripId && x.ID !== id && !x.ParentID).map(x => ({v: x.ID, l: x.Item})));
+  const v = b0 ? Object.assign({}, b0) : {TripID: tripId, Item:'', Category:'Other', Amount:'', ParentID:'', Exclude:''};
+  openForm(id ? 'Edit budget line' : 'New budget line', 'TripBudget', [
+    {k:'Item', l:'Item / line name', req:true},
+    {k:'Category', l:'Category', t:'select', o:Object.keys(TCAT_IC)},
+    {k:'Amount', l:'Budget amount (LKR)', t:'number', step:'any'},
+    {k:'ParentID', l:'Parent line (optional)', t:'select', o:parents}
+  ], v);
+}
+
+function editTripExp(id, budId) {
+  const e0 = id ? D.TripExp.find(x => x.ID === id) : null;
+  const t = trips().find(x => x.ID === tripId);
+  const ms = D.TripMembers.filter(m => m.TripID === tripId && m.Role !== 'Donor').map(m => m.Name);
+  const buds = [{v:'', l:'None'}].concat(D.TripBudget.filter(b => b.TripID === tripId).map(b => ({v: b.ID, l: b.Item})));
+  const paidOpts = [{v:'', l:'Trip cash / bank fund'}].concat(ms.map(n => ({v: n, l: n + ' (paid personally)'})));
+  const v = e0 ? Object.assign({}, e0, {Account: accLab(e0.Account)}) : {TripID: tripId, Date: today(), Item:'', Category:'Food', BudgetID: budId || '', Amount:'', PaidBy:'', Account: accLab(t && t.Account), Status:'Paid', Note:''};
+  openForm(id ? 'Edit trip expense' : 'New trip expense', 'TripExp', [
+    {k:'Item', l:'What was spent on', req:true},
+    {k:'Amount', l:'Amount (LKR)', t:'number', step:'any', req:true},
+    {k:'Category', l:'Category', t:'select', o:Object.keys(TCAT_IC)},
+    {k:'BudgetID', l:'Budget line', t:'select', o:buds},
+    {k:'PaidBy', l:'Paid by', t:'select', o:paidOpts},
+    {k:'Account', l:'Savings account (when from trip fund)', t:'select', o:savAccOpts()},
+    {k:'Status', l:'Split rule', t:'select', o:[{v:'Paid', l:'Normal shared expense'}, {v:'Private', l:'Paid personally (not in split)'}, {v:'Agreed', l:'Agreed cost (no cash moved)'}]},
+    {k:'Date', l:'Date', t:'date', req:true},
+    {k:'Note', l:'Note'}
+  ], v, {submit: o => { o.Account = accVal(o.Account); call('save', 'TripExp', o); }});
+}
+
 function editTripPay(id, member, kind, amt) {
   const t = trips().find(x => x.ID === tripId), ms = D.TripMembers.filter(m => m.TripID === tripId && m.Role !== 'Donor').map(m => m.Name);
-  if (!ms.length) { alert('Add at least one member first.'); return; }
+  if (!ms.length) { toast('Add at least one member first.'); return; }
   const p0 = id ? D.TripPay.find(x => x.ID === id) : null, ME = 'Me (organizer)';
   const v = p0 ? Object.assign({}, p0, {Account: payLab(p0.Account), Holder: p0.Holder || ME, CountMine: p0.TxID ? 'Yes' : 'No'})
     : {TripID: tripId, Date: today(), Member: member || ms[0], Kind: kind || 'Collection', Amount: amt || '', Account: payLab(t && t.Account), Holder: ME, CountMine: 'No'};
@@ -232,6 +1262,7 @@ function editTripPay(id, member, kind, amt) {
   const sync = () => { const me = hEl.value === ME; aEl.parentElement.style.display = me ? '' : 'none'; cEl.parentElement.style.display = me && aEl.value !== HAND ? '' : 'none'; };
   hEl.addEventListener('change', sync); aEl.addEventListener('change', sync); sync();
 }
+
 function editDonation(id, sheet) {
   const donors = D.TripMembers.filter(m => m.TripID === tripId && m.Role === 'Donor').map(m => m.Name), allM = D.TripMembers.filter(m => m.TripID === tripId).map(m => m.Name);
   const who = Array.from(new Set(donors.concat(allM).concat(['Well-wisher'])));
@@ -255,12 +1286,101 @@ function editDonation(id, sheet) {
     else { const hld = o.Holder || ''; call('save', 'TripPay', {ID: p && p.ID, TripID: tripId, Date: o.Date, Member: o.Member, Kind: 'Donation', Amount: o.Amount, Account: hld ? '' : accVal(o.Account), Holder: hld, Note: o.Note || ''}); }
   }});
 }
-<!-- ... existing code ... -->
-  ${st.private.length ? `<h2>Paid personally</h2><table><thead><tr><th>Date</th><th>Member</th><th>Item</th><th class="r">Amount</th></tr></thead>
-    <tbody>${st.private.map(e => `<tr>${td(e.Date)}${td(e.Member)}${td(e.Item)}${tr(fmt(e.Amount))}</tr>`).join('')}</tbody></table>` : ''}
+
+function editLoan(id) {
+  const l0 = id ? D.Loans.find(x => x.ID === id) : null;
+  const v = l0 ? Object.assign({}, l0) : {Person:'', Direction:'Lent', Principal:'', Paid:0, Rate:0, Months:0, DueDate:'', Account: defAcct() || accOpts()[0] || ''};
+  openForm(id ? 'Edit loan' : 'New loan', 'Loans', [
+    {k:'Person', l:'Person / party', req:true},
+    {k:'Direction', l:'Direction', t:'select', o:['Lent', 'Borrowed']},
+    {k:'Principal', l:'Principal amount', t:'number', step:'any', req:true},
+    {k:'Paid', l:'Paid so far', t:'number', step:'any'},
+    {k:'Rate', l:'Annual interest % (0 if none)', t:'number', step:'any'},
+    {k:'Months', l:'Term in months (0 if none)', t:'number'},
+    {k:'DueDate', l:'Due date', t:'date'},
+    {k:'Account', l:'Account', t:'select', o:accOpts()}
+  ], v);
+}
+
+function editBill(id) {
+  const b0 = id ? D.Bills.find(x => x.ID === id) : null;
+  const v = b0 ? Object.assign({}, b0) : {Name:'', Amount:'', Freq:'Monthly', DueDate: today(), Account: defAcct() || accOpts()[0] || '', Active:'Yes'};
+  openForm(id ? 'Edit bill' : 'New bill', 'Bills', [
+    {k:'Name', l:'Bill name', req:true},
+    {k:'Amount', l:'Amount', t:'number', step:'any', req:true},
+    {k:'Freq', l:'Frequency', t:'select', o:['Monthly', 'Weekly', 'Yearly', 'Once']},
+    {k:'DueDate', l:'Next due date', t:'date'},
+    {k:'Account', l:'Account', t:'select', o:accOpts()},
+    {k:'Active', l:'Active', t:'select', o:['Yes', 'No']}
+  ], v);
+}
+
+function editGoal(id) {
+  const g0 = id ? D.Goals.find(x => x.ID === id) : null;
+  const v = g0 ? Object.assign({}, g0) : {Name:'', Target:'', Saved:0, TargetDate:''};
+  openForm(id ? 'Edit goal' : 'New goal', 'Goals', [
+    {k:'Name', l:'Goal name', req:true},
+    {k:'Target', l:'Target amount', t:'number', step:'any', req:true},
+    {k:'Saved', l:'Saved so far', t:'number', step:'any'},
+    {k:'TargetDate', l:'Target date', t:'date'}
+  ], v);
+}
+
+function editBudget(id) {
+  const b0 = id ? D.Budgets.find(x => x.ID === id) : null;
+  const cats = D.Categories.filter(c => (c.Type || 'Expense') === 'Expense').map(c => c.Name);
+  const v = b0 ? Object.assign({}, b0) : {Month: month, Category: cats[0] || '', Amount:'', Account:''};
+  openForm(id ? 'Edit budget' : 'New budget', 'Budgets', [
+    {k:'Month', l:'Month (YYYY-MM)', req:true},
+    {k:'Category', l:'Category', t:'select', o:cats, req:true},
+    {k:'Amount', l:'Monthly limit', t:'number', step:'any', req:true},
+    {k:'Account', l:'Account (blank = all)', t:'select', o:[''].concat(accOpts())}
+  ], v);
+}
+
+function editCat(id) {
+  const c0 = id ? D.Categories.find(x => x.ID === id) : null;
+  const t0 = c0 ? (c0.Type || 'Expense') : catType;
+  const parents = [''].concat(D.Categories.filter(c => (c.Type || 'Expense') === t0 && !c.Parent && c.ID !== id).map(c => c.Name));
+  const v = c0 ? Object.assign({}, c0) : {Name:'', Type: t0, Parent:''};
+  openForm(id ? 'Edit category' : 'New category', 'Categories', [
+    {k:'Name', l:'Category name', req:true},
+    {k:'Type', l:'Type', t:'select', o:['Expense', 'Income']},
+    {k:'Parent', l:'Parent category (optional)', t:'select', o:parents}
+  ], v);
+}
+
+/* ---------------- REPORTS ---------------- */
+const reportCss = `<style>body{font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:760px;margin:24px auto;padding:0 16px;color:#111}h1{margin:0 0 4px;font-size:22px}h2{margin:22px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:#555;border-bottom:1px solid #e5e7eb;padding-bottom:4px}.sub{color:#666;font-size:13px;margin-bottom:16px}table{width:100%;border-collapse:collapse;margin-bottom:12px}th,td{padding:7px 8px;border-bottom:1px solid #eee;text-align:left;font-size:13.5px}th{font-size:11.5px;text-transform:uppercase;color:#666}.r{text-align:right;font-variant-numeric:tabular-nums}.inc{color:#15803d}.warn{color:#b91c1c}.bar{height:6px;background:#e5e7eb;border-radius:99px;overflow:hidden;margin-top:4px}.bar>i{display:block;height:100%;background:#0a7ea4}.bar>i.over{background:#dc2626}.bar>i.near{background:#d97706}.bar.thin{height:4px}.bar.thin>i{background:#0284c7}.bar.thin>i.over{background:#dc2626}.bar.thin>i.near{background:#d97706}.bar.lg{height:10px}.bar.lg>i{background:#16a34a}.bar.lg>i.over{background:#dc2626}.bar.lg>i.near{background:#d97706}.bar.sm{height:5px}.bar.sm>i{background:#6366f1}.bar.sm>i.over{background:#dc2626}.bar.sm>i.near{background:#d97706}.pbar{height:7px;background:#e5e7eb;border-radius:99px;overflow:hidden;margin-top:4px}.pbar>i{display:block;height:100%;background:#0284c7}.pbar>i.over{background:#dc2626}.pbar>i.near{background:#d97706}.pbar.lg{height:10px}.pbar.lg>i{background:#16a34a}.pbar.lg>i.over{background:#dc2626}.pbar.lg>i.near{background:#d97706}.pbar.sm{height:5px}.pbar.sm>i{background:#6366f1}.pbar.sm>i.over{background:#dc2626}.pbar.sm>i.near{background:#d97706}.bwrap{display:flex;align-items:center;gap:8px}.bwrap .bar,.bwrap .pbar{flex:1;margin-top:0}.bwrap span{min-width:34px;text-align:right;font-size:12px;color:#555;font-variant-numeric:tabular-nums}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}.box{border:1px solid #e5e7eb;border-radius:10px;padding:12px}.box b{font-size:18px;display:block;margin-top:2px}.bar{height:6px;background:#e5e7eb;border-radius:99px;overflow:hidden;margin-top:4px}.bar>i{display:block;height:100%;background:#0a7ea4}.bar>i.over{background:#dc2626}.bar>i.near{background:#d97706}.bar.thin{height:4px}.bar.thin>i{background:#0284c7}.bar.thin>i.over{background:#dc2626}.bar.thin>i.near{background:#d97706}.bar.lg{height:10px}.bar.lg>i{background:#16a34a}.bar.lg>i.over{background:#dc2626}.bar.lg>i.near{background:#d97706}.bar.sm{height:5px}.bar.sm>i{background:#6366f1}.bar.sm>i.over{background:#dc2626}.bar.sm>i.near{background:#d97706}.pbar{height:7px;background:#e5e7eb;border-radius:99px;overflow:hidden;margin-top:4px}.pbar>i{display:block;height:100%;background:#0284c7}.pbar>i.over{background:#dc2626}.pbar>i.near{background:#d97706}.pbar.lg{height:10px}.pbar.lg>i{background:#16a34a}.pbar.lg>i.over{background:#dc2626}.pbar.lg>i.near{background:#d97706}.pbar.sm{height:5px}.pbar.sm>i{background:#6366f1}.pbar.sm>i.over{background:#dc2626}.pbar.sm>i.near{background:#d97706}.bwrap{display:flex;align-items:center;gap:8px}.bwrap .bar,.bwrap .pbar{flex:1;margin-top:0}.bwrap span{min-width:34px;text-align:right;font-size:12px;color:#555;font-variant-numeric:tabular-nums}@media (max-width:600px){.grid2{grid-template-columns:1fr}}.bar{margin-bottom:14px}.bar button{margin-right:8px;padding:7px 14px;border-radius:8px;border:1px solid #ccc;background:#f8f8f8;cursor:pointer;font-size:13px}@media print{.bar{display:none}body{margin:0}}</style>`;
+
+function shareReport(html, filename) {
+  const file = new File([html], filename, {type:'text/html'});
+  if (navigator.canShare && navigator.canShare({files:[file]})) {
+    navigator.share({files:[file], title: filename.replace(/\.html$/,'')}).catch(() => {});
+  } else {
+    const w = window.open('', '_blank');
+    if (w) { w.document.open(); w.document.write(html); w.document.close(); }
+  }
+}
+
+function report(id) {
+  const t = trips().find(x => x.ID === id); if (!t) return;
+  const st = tripStats(t), S = tripSettle(t, st), R = Math.round, td = s => `<td>${esc(s)}</td>`, tr = (s, cls) => `<td class="r${cls ? ' ' + cls : ''}">${esc(s)}</td>`;
+  const mains = st.budRows.filter(r => !r.sub), kidsOf2 = r => st.budRows.filter(k => r.kids.includes(k.b.ID));
+  const budTr = (r, nest) => { const left = r.plan - r.spent, ov = r.plan > 0 && left < 0;
+    return `<tr><td>${nest ? '&nbsp;&nbsp;↳ ' : ''}<b>${esc(r.b.Item)}</b></td>${tr(r.plan ? fmt(r.plan) : '–')}${tr(fmt(r.spent))}<td class="r ${ov ? 'warn' : ''}"><b>${r.plan ? fmt(left) : '–'}</b></td></tr>` + kidsOf2(r).map(k => budTr(k, true)).join(''); };
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(t.Name)} – Summary</title>${reportCss}</head><body>
+  <div class="bar"><button onclick="window.print()">Print / Save PDF</button><button class="g" onclick="window.close()">Close</button></div>
+  <h1>${esc(t.Name)}</h1><div class="sub">${esc([t.Destination, tripDates(t), st.ms.length + ' coming'].filter(Boolean).join(' · '))}</div>
+  <div class="grid2"><div class="box"><span class="sub">Budget</span><b>${fmt(st.budget)}</b></div><div class="box"><span class="sub">Spent</span><b>${fmt(st.spentColl)}</b></div></div>
+  <h2>Budget vs expenses</h2><table><thead><tr><th>Item</th><th class="r">Budget</th><th class="r">Spent</th><th class="r">Left</th></tr></thead>
+    <tbody>${mains.map(r => budTr(r, false)).join('')}${st.unbud > 0.5 ? `<tr><td>Outside budget</td>${tr('–')}${tr(fmt(st.unbud))}${tr('–')}</tr>` : ''}</tbody></table>
+  <h2>Members</h2><table><thead><tr><th>Member</th><th class="r">Paid</th><th class="r">Cost</th><th class="r">Balance</th></tr></thead>
+    <tbody>${S.rows.map(r => { const d = R(r.net); return `<tr>${td(r.m.Name)}${tr(fmt(R(r.paid)))}${tr(fmt(R(r.cost)))}<td class="r ${d > 0 ? 'inc' : d < 0 ? 'warn' : ''}"><b>${d === 0 ? 'Settled' : (d > 0 ? 'Refund ' : 'Collect ') + fmt(Math.abs(d))}</b></td></tr>`; }).join('')}</tbody></table>
   <p class="sub" style="margin-top:22px">Generated ${today()}</p></body></html>`;
   shareReport(html, (t.Name || 'trip').replace(/[^\w\-]+/g, '_') + '_summary.html');
 }
+
 function memberReport(id) {
   const t = trips().find(x => x.ID === id); if (!t) return;
   const st = tripStats(t), S = tripSettle(t, st), R = Math.round, td = s => `<td>${esc(s)}</td>`, tr = (s, cls) => `<td class="r${cls ? ' ' + cls : ''}">${esc(s)}</td>`;
@@ -278,5 +1398,76 @@ function memberReport(id) {
   <p class="sub" style="margin-top:22px">Generated ${today()}</p></body></html>`;
   shareReport(html, (t.Name || 'trip').replace(/[^\w\-]+/g, '_') + '_members_donations.html');
 }
-function planReport(id) {
-<!-- ... existing code ... -->
+
+function budgetReport(id) {
+  const t = trips().find(x => x.ID === id); if (!t) return;
+  const st = tripStats(t), B = budgetShareInfo(st), R = Math.round;
+  const td = s => `<td>${esc(s)}</td>`, tr = (s, cls) => `<td class="r${cls ? ' ' + cls : ''}">${esc(s)}</td>`;
+  const mains = st.budRows.filter(r => !r.sub), kidsOf2 = r => st.budRows.filter(k => r.kids.includes(k.b.ID));
+  const budTr = (r, nest) => {
+    const left = r.plan - r.spent, ov = r.plan > 0 && left < 0;
+    return `<tr><td>${nest ? '&nbsp;&nbsp;↳ ' : ''}<b>${esc(r.b.Item)}</b></td><td>${esc(r.b.Category || 'Other')}</td>${tr(r.plan ? fmt(r.plan) : '–')}${tr(fmt(r.spent))}<td class="r ${ov ? 'warn' : ''}"><b>${r.plan ? fmt(left) : '–'}</b></td></tr>` + kidsOf2(r).map(k => budTr(k, true)).join('');
+  };
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(t.Name)} – Trip budget</title>${reportCss}</head><body>
+  <div class="bar"><button onclick="window.print()">Print / Save PDF</button><button class="g" onclick="window.close()">Close</button></div>
+  <h1>${esc(t.Name)} – Trip budget</h1><div class="sub">${esc([t.Destination, tripDates(t), B.n + ' coming'].filter(Boolean).join(' · '))}</div>
+  <div class="grid2"><div class="box"><span class="sub">Total budget</span><b>${fmt(st.budget)}</b></div><div class="box"><span class="sub">Remaining</span><b>${fmt(st.stillToPay)}</b></div></div>
+  <h2>Budget categories</h2><table><thead><tr><th>Item</th><th>Category</th><th class="r">Budget</th><th class="r">Spent</th><th class="r">Left</th></tr></thead>
+    <tbody>${mains.length ? mains.map(r => budTr(r, false)).join('') : '<tr><td colspan="5">No budget lines set.</td></tr>'}</tbody></table>
+  ${B.rows.length ? `<h2>Individual budget plan</h2><table><thead><tr><th>Member</th><th class="r">Share</th></tr></thead>
+    <tbody>${B.rows.map(r => `<tr>${td(r.m.Name)}${tr(fmt(R(r.amt)))}</tr>`).join('')}<tr><td><b>Total</b></td><td class="r"><b>${fmt(R(sum(B.rows, r => r.amt)))}</b></td></tr></tbody></table>` : ''}
+  <p class="sub" style="margin-top:22px">Generated ${today()}</p></body></html>`;
+  shareReport(html, (t.Name || 'trip').replace(/[^\w\-]+/g, '_') + '_budget.html');
+}
+
+/* ---------------- GESTURES & SW ---------------- */
+function wireSwipe() {
+  const el = $('.swipe-acct'); if (!el) return;
+  const opts = [''].concat(homeList().map(x => x.Name));
+  if (opts.length < 2) return;
+  let sx = 0, sy = 0;
+  el.addEventListener('touchstart', e => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, {passive: true});
+  el.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
+    if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+      const i = Math.max(0, opts.indexOf(homeAcct));
+      homeAcct = opts[(i + (dx < 0 ? 1 : -1) + opts.length) % opts.length];
+      homeCat = ''; homeSub = ''; render();
+    }
+  }, {passive: true});
+}
+
+function wireReorder() {
+  if (!reorder || tab !== 'trips' || !tripId) return;
+  const list = D.TripBudget.filter(b => b.TripID === tripId);
+  if (!list.length) return;
+  openSheet('Reorder budget items', list.map((b, idx) => `<div class="item" data-id="${b.ID}">
+    <div class="main"><div class="title">${esc(b.Item)}</div><div class="sub">${fmt(b.Amount)}</div></div>
+    <div style="display:flex;gap:6px">
+      <button class="icon-btn" onclick="moveBud('${b.ID}',-1)">↑</button>
+      <button class="icon-btn" onclick="moveBud('${b.ID}',1)">↓</button>
+    </div>
+  </div>`).join('') + `<div class="foot"><button class="save" onclick="reorder=false;closeSheet();render()">Done</button></div>`);
+}
+function moveBud(id, dir) {
+  const list = D.TripBudget.filter(b => b.TripID === tripId);
+  const idx = list.findIndex(b => b.ID === id);
+  const j = idx + dir;
+  if (idx < 0 || j < 0 || j >= list.length) return;
+  const ids = list.map(b => b.ID);
+  [ids[idx], ids[j]] = [ids[j], ids[idx]];
+  call('reorder', 'TripBudget', ids);
+  wireReorder();
+}
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
+
+loadCache();
+render();
+sync(false);
+window.addEventListener('online', () => { toast('Back online'); sync(true); });
+</script>
+</body>
+</html>
